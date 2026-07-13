@@ -1,93 +1,287 @@
-# Nugetsupdate
+# Project Manager (Nugetsupdate)
 
+[Русский](#русский) | [English](#english)
 
+<a id="русский"></a>
 
-## Getting started
+## Русский
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Project Manager — настольное WPF-приложение для Windows, которое помогает провести типовой релизный цикл для .NET-решения из одного интерфейса: проверить версии NuGet-пакетов, применить обновления, синхронизировать версию проектов, собрать решение и опубликовать изменения и тег в Git.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Возможности
 
-## Add your files
+- открытие Visual Studio-решений (`.sln`) и автоматический поиск входящих в них C#-проектов (`.csproj`);
+- отображение текущей версии каждого проекта и общей версии решения (`Mixed`, если версии различаются);
+- проверка верхнеуровневых NuGet-зависимостей для `net4.8`;
+- поиск актуальных стабильных версий пакетов в настроенных NuGet V2/V3-источниках;
+- выбор обновлений отдельно, выбор всех доступных обновлений или очистка выбора;
+- применение выбранных версий через `dotnet add package`;
+- единая запись `Version`, `FileVersion` и `AssemblyVersion` во все проекты решения;
+- восстановление пакетов и Release-сборка решения через заданный `MSBuild.exe`;
+- выполнение `git add`, создание коммита и отправка текущей ветки;
+- создание Git-тега по настраиваемому шаблону, например `v_{version}`, и отправка тега в `origin`;
+- журнал этапов с выводом команд, кодами завершения и сообщениями об ошибках;
+- сохранение пути к MSBuild и списка NuGet-источников между запусками.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Требования
 
+- Windows 10/11;
+- [.NET SDK 8](https://dotnet.microsoft.com/download/dotnet/8.0) (проект закрепляет SDK `8.0.422` с переходом на более новый feature band);
+- Visual Studio 2022 или Build Tools с MSBuild;
+- PowerShell 5.1 (`powershell.exe`);
+- Git, доступный через `PATH`;
+- доступ к используемым NuGet-источникам и Git-репозиторию.
+
+Проверка пакетов сейчас выполняется для целевого фреймворка `net4.8`, поэтому загружаемое решение должно содержать соответствующую конфигурацию.
+
+## Сборка и запуск
+
+Из корня репозитория выполните:
+
+```powershell
+dotnet restore ProjectManager.sln
+dotnet build ProjectManager.sln -c Release
+dotnet run --project ProjectManager.App\ProjectManager.App.csproj
 ```
-cd existing_repo
-git remote add origin https://gitlab.3tec.de/automation/nugetsupdate.git
-git branch -M main
-git push -uf origin main
+
+Готовое приложение будет собрано в `ProjectManager.App\bin\Release\net8.0-windows`.
+
+## Использование
+
+1. Запустите приложение и нажмите **Open solution**, затем выберите `.sln`.
+2. Откройте **Settings**:
+   - укажите полный путь к `MSBuild.exe`;
+   - добавьте адреса NuGet V2/V3 feeds и сохраните настройки.
+3. Нажмите **Check updates**. Для выбранного в дереве проекта появится таблица пакетов с текущей и последней стабильной версией.
+4. Отметьте нужные строки или нажмите **Use all**, затем **Apply versions**.
+5. При необходимости задайте общую версию и нажмите **Set version**.
+6. Нажмите **Build**, чтобы выполнить Restore и Release-сборку через MSBuild.
+7. Укажите сообщение и нажмите **Commit**. Приложение выполнит добавление всех изменений, коммит и `git push`.
+8. Проверьте шаблон тега и нажмите **Create tag**, чтобы создать тег и отправить его в `origin`.
+
+Каждый этап запускается отдельно. Это позволяет проверить журнал и состояние рабочего дерева перед коммитом или публикацией тега.
+
+## Настройки
+
+Настройки хранятся в профиле текущего пользователя:
+
+```text
+%APPDATA%\ProjectManager\nuget-sources.json
 ```
 
-## Integrate with your tools
+По умолчанию приложение использует путь:
 
-- [ ] [Set up project integrations](https://gitlab.3tec.de/automation/nugetsupdate/-/settings/integrations)
+```text
+C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe
+```
 
-## Collaborate with your team
+Если установлена другая редакция Visual Studio или только Build Tools, путь необходимо изменить в окне **Settings**.
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Как работает обновление пакетов
 
-## Test and Deploy
+Для каждого проекта приложение:
 
-Use the built-in continuous integration in GitLab.
+1. получает список зависимостей командой `dotnet list <project> package --framework net4.8 --include-transitive --format json`;
+2. обрабатывает верхнеуровневые зависимости из результата;
+3. запрашивает доступные версии напрямую у настроенных V2/V3 NuGet-источников;
+4. исключает prerelease-версии (версии с суффиксом через `-`, включая `alpha`);
+5. предлагает новейшую найденную стабильную версию;
+6. применяет выбор командой `dotnet add <project> package <name> --version <version>`.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Если NuGet-источники не настроены или недоступны, приложение не сможет определить новые версии. Адреса приватных feeds должны быть доступны без дополнительной интерактивной авторизации либо уже настроены в окружении.
 
-***
+## Git-операции
 
-# Editing this README
+Кнопка **Commit** последовательно выполняет:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```powershell
+git add -A
+git commit -m "<сообщение>"
+git push
+```
 
-## Suggestions for a good README
+Кнопка **Create tag** выполняет:
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```powershell
+git tag "<тег>"
+git push origin "<тег>"
+```
 
-## Name
-Choose a self-explaining name for your project.
+Каталогом репозитория считается папка, в которой находится выбранный `.sln`. Перед запуском этих действий рекомендуется проверить текущую ветку, remote и состав изменений.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Структура проекта
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```text
+ProjectManager.sln
+└── ProjectManager.App
+    ├── Models          # модели проектов, пакетов, настроек и результатов процессов
+    ├── Services        # анализ solution, NuGet, версии, MSBuild, Git и настройки
+    ├── ViewModels      # состояние интерфейса и orchestration рабочего процесса
+    ├── MainWindow.*    # главное окно приложения
+    └── NuGetSourcesWindow.* # настройки MSBuild и NuGet feeds
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Приложение построено на .NET 8, WPF и шаблоне MVVM без сторонних библиотек.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## Текущие ограничения
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+- поддерживаются только C#-проекты `.csproj`, напрямую перечисленные в классическом `.sln`;
+- проверка зависимостей жестко привязана к `net4.8`;
+- обновляются только верхнеуровневые `PackageReference`, даже если команда получения списка включает транзитивные зависимости;
+- prerelease-версии не предлагаются;
+- Git-команды применяются ко всем изменениям в рабочем дереве (`git add -A`);
+- автоматического отката изменений при ошибке сборки, push или создания тега нет;
+- приложение рассчитано на обычный Git-репозиторий с настроенным `origin` и учетными данными.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+## Технологии
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+- C# / .NET 8
+- WPF
+- MVVM
+- `dotnet` CLI
+- MSBuild
+- PowerShell
+- Git
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+---
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+<a id="english"></a>
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## English
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Project Manager is a Windows desktop WPF application that brings the typical release workflow for a .NET solution into a single interface. It can check and update NuGet packages, synchronize project versions, build the solution, and publish Git changes and release tags.
 
-## License
-For open source projects, say how it is licensed.
+### Features
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- opens Visual Studio solutions (`.sln`) and automatically discovers their C# projects (`.csproj`);
+- displays the current version of every project and the common solution version (`Mixed` when versions differ);
+- checks top-level NuGet dependencies targeting `net4.8`;
+- finds the latest stable package versions in configured NuGet V2/V3 sources;
+- supports selecting individual updates, selecting all available updates, and clearing the selection;
+- applies selected versions through `dotnet add package`;
+- writes the same `Version`, `FileVersion`, and `AssemblyVersion` to every project in the solution;
+- restores packages and builds the solution in Release mode using the configured `MSBuild.exe`;
+- stages all changes, creates a Git commit, and pushes the current branch;
+- creates a Git tag from a configurable pattern such as `v_{version}` and pushes it to `origin`;
+- provides a workflow log containing command output, exit codes, and error messages;
+- persists the MSBuild path and NuGet source list between application sessions.
+
+### Requirements
+
+- Windows 10/11;
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (the repository pins SDK `8.0.422` and allows rolling forward to a newer feature band);
+- Visual Studio 2022 or Visual Studio Build Tools with MSBuild;
+- PowerShell 5.1 (`powershell.exe`);
+- Git available through `PATH`;
+- access to the required NuGet sources and Git repository.
+
+Package inspection currently targets `net4.8`, so the loaded solution must contain a compatible target framework configuration.
+
+### Build and run
+
+Run the following commands from the repository root:
+
+```powershell
+dotnet restore ProjectManager.sln
+dotnet build ProjectManager.sln -c Release
+dotnet run --project ProjectManager.App\ProjectManager.App.csproj
+```
+
+The Release build is written to `ProjectManager.App\bin\Release\net8.0-windows`.
+
+### Usage
+
+1. Start the application, select **Open solution**, and choose a `.sln` file.
+2. Open **Settings**:
+   - enter the full path to `MSBuild.exe`;
+   - add the required NuGet V2/V3 feed URLs and save the settings.
+3. Select **Check updates**. The table for the selected project displays each package with its current and latest stable version.
+4. Select individual rows or choose **Use all**, then select **Apply versions**.
+5. If required, enter a common solution version and select **Set version**.
+6. Select **Build** to restore packages and build the solution in Release mode through MSBuild.
+7. Enter a commit message and select **Commit**. The application stages all changes, creates a commit, and runs `git push`.
+8. Review the tag pattern and select **Create tag** to create the resolved tag and push it to `origin`.
+
+Each stage is started separately, allowing you to review the workflow log and working tree before committing changes or publishing a tag.
+
+### Settings
+
+Settings are stored in the current Windows user profile:
+
+```text
+%APPDATA%\ProjectManager\nuget-sources.json
+```
+
+The default MSBuild path is:
+
+```text
+C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe
+```
+
+If a different Visual Studio edition or Build Tools is installed, update this path in **Settings**.
+
+### How package updates work
+
+For every project, the application:
+
+1. retrieves its dependency list with `dotnet list <project> package --framework net4.8 --include-transitive --format json`;
+2. processes the top-level dependencies returned by that command;
+3. requests available versions directly from the configured NuGet V2/V3 sources;
+4. excludes prerelease versions, including any version containing a `-` suffix or `alpha`;
+5. proposes the latest stable version found;
+6. applies the selection with `dotnet add <project> package <name> --version <version>`.
+
+The application cannot determine new versions when no NuGet sources are configured or when the configured sources are unavailable. Private feeds must either be accessible without interactive authentication or already be authenticated in the environment.
+
+### Git operations
+
+The **Commit** action runs:
+
+```powershell
+git add -A
+git commit -m "<message>"
+git push
+```
+
+The **Create tag** action runs:
+
+```powershell
+git tag "<tag>"
+git push origin "<tag>"
+```
+
+The directory containing the selected `.sln` is treated as the repository directory. Before using these actions, verify the current branch, configured remote, and working-tree changes.
+
+### Project structure
+
+```text
+ProjectManager.sln
+└── ProjectManager.App
+    ├── Models          # projects, packages, settings, and process result models
+    ├── Services        # solution analysis, NuGet, versions, MSBuild, Git, and settings
+    ├── ViewModels      # UI state and workflow orchestration
+    ├── MainWindow.*    # main application window
+    └── NuGetSourcesWindow.* # MSBuild and NuGet feed settings
+```
+
+The application is built with .NET 8, WPF, and the MVVM pattern without third-party libraries.
+
+### Current limitations
+
+- only C# `.csproj` files directly listed in a traditional `.sln` file are supported;
+- dependency inspection is hard-coded to `net4.8`;
+- only top-level `PackageReference` dependencies are updated, even though the listing command includes transitive dependencies;
+- prerelease versions are not offered;
+- Git operations stage every working-tree change with `git add -A`;
+- changes are not rolled back automatically when the build, push, or tag creation fails;
+- the application expects a regular Git repository with a configured `origin` and valid credentials.
+
+### Technology stack
+
+- C# / .NET 8
+- WPF
+- MVVM
+- `dotnet` CLI
+- MSBuild
+- PowerShell
+- Git
