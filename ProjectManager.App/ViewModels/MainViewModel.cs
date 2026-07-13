@@ -1,0 +1,569 @@
+using Microsoft.Win32;
+using ProjectManager.App.Infrastructure;
+using ProjectManager.App.Models;
+using ProjectManager.App.Services;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Text;
+
+namespace ProjectManager.App.ViewModels;
+
+public sealed class MainViewModel : INotifyPropertyChanged
+{
+  private readonly SolutionAnalyzer _solutionAnalyzer = new();
+  private readonly PowerShellCommandRunner _commandRunner = new();
+  private readonly NuGetUpdateService _nugetUpdateService;
+  private readonly ReleaseWorkflowService _releaseWorkflowService;
+  private readonly ProjectVersionService _projectVersionService = new();
+  private readonly NuGetSourceSettingsService _sourceSettingsService = new();
+  private ProjectNode? _selectedProject;
+  private string _solutionPath = string.Empty;
+  private string _newVersion = string.Empty;
+  private string _tagPattern = "v_{version}";
+  private string _commitMessage = "Update NuGet packages";
+  private string _msBuildPath = string.Empty;
+  private string _status = "Select a solution to begin.";
+  private string _workflowLog = string.Empty;
+  private bool _isBusy;
+
+  public MainViewModel()
+  {
+    _nugetUpdateService = new NuGetUpdateService(_commandRunner);
+    _releaseWorkflowService = new ReleaseWorkflowService(_commandRunner);
+    BrowseSolutionCommand = new RelayCommand(BrowseSolution);
+    SaveNuGetSourcesCommand = new RelayCommand(SaveNuGetSources);
+    AddNuGetSourceCommand = new RelayCommand(() => NuGetSources.Add(new NuGetSourceSetting()));
+    RemoveEmptyNuGetSourcesCommand = new RelayCommand(RemoveEmptyNuGetSources);
+    SetSolutionVersionCommand = new RelayCommand(SetSolutionVersion, () => Projects.Count > 0 && !string.IsNullOrWhiteSpace(NewVersion) && !IsBusy);
+    SelectAllPackageUpdatesCommand = new RelayCommand(SelectAllPackageUpdates, () => HasPackageRows && !IsBusy);
+    ClearAllPackageUpdatesCommand = new RelayCommand(ClearAllPackageUpdates, () => HasPackageRows && !IsBusy);
+    CheckUpdatesCommand = new AsyncRelayCommand(CheckUpdatesAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
+    ApplyUpdatesCommand = new AsyncRelayCommand(ApplyUpdatesAsync, () => Projects.SelectMany(project => project.PackageUpdates).Any(update => update.IsSelected && update.CanApply) && !IsBusy);
+    BuildCommand = new AsyncRelayCommand(BuildAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
+    CommitCommand = new AsyncRelayCommand(CommitAndPushAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !string.IsNullOrWhiteSpace(CommitMessage) && !IsBusy);
+    CreateTagCommand = new AsyncRelayCommand(CreateAndPushTagAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !string.IsNullOrWhiteSpace(ResolvedTagName) && !IsBusy);
+
+    var settings = _sourceSettingsService.Load();
+    MSBuildPath = settings.MSBuildPath;
+    foreach (var source in settings.NuGetSources)
+    {
+      NuGetSources.Add(source);
+    }
+  }
+
+  public event PropertyChangedEventHandler? PropertyChanged;
+
+  public ObservableCollection<ProjectNode> Projects { get; } = [];
+  public ObservableCollection<ProjectNode> ProjectTree { get; } = [];
+  public ObservableCollection<PackageUpdate> PackageUpdates { get; } = [];
+  public ObservableCollection<NuGetSourceSetting> NuGetSources { get; } = [];
+
+  public RelayCommand BrowseSolutionCommand { get; }
+  public RelayCommand SaveNuGetSourcesCommand { get; }
+  public RelayCommand AddNuGetSourceCommand { get; }
+  public RelayCommand RemoveEmptyNuGetSourcesCommand { get; }
+  public RelayCommand SetSolutionVersionCommand { get; }
+  public RelayCommand SelectAllPackageUpdatesCommand { get; }
+  public RelayCommand ClearAllPackageUpdatesCommand { get; }
+  public AsyncRelayCommand CheckUpdatesCommand { get; }
+  public AsyncRelayCommand ApplyUpdatesCommand { get; }
+  public AsyncRelayCommand BuildCommand { get; }
+  public AsyncRelayCommand CommitCommand { get; }
+  public AsyncRelayCommand CreateTagCommand { get; }
+
+  public string SolutionPath
+  {
+    get => _solutionPath;
+    private set => SetField(ref _solutionPath, value);
+  }
+
+  public string NewVersion
+  {
+    get => _newVersion;
+    set
+    {
+      if (SetField(ref _newVersion, value))
+      {
+        SetSolutionVersionCommand.RaiseCanExecuteChanged();
+        CreateTagCommand.RaiseCanExecuteChanged();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResolvedTagName)));
+      }
+    }
+  }
+
+  public string TagPattern
+  {
+    get => _tagPattern;
+    set
+    {
+      if (SetField(ref _tagPattern, value))
+      {
+        CreateTagCommand.RaiseCanExecuteChanged();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResolvedTagName)));
+      }
+    }
+  }
+
+  public string ResolvedTagName => ResolveTagName();
+
+  public string CommitMessage
+  {
+    get => _commitMessage;
+    set
+    {
+      if (SetField(ref _commitMessage, value))
+      {
+        CommitCommand.RaiseCanExecuteChanged();
+      }
+    }
+  }
+
+  public string MSBuildPath
+  {
+    get => _msBuildPath;
+    set => SetField(ref _msBuildPath, value);
+  }
+
+  public string SolutionVersion => ResolveSolutionVersion();
+
+  public string SelectedProjectVersion => SelectedProject?.ProjectVersion ?? string.Empty;
+
+  public ProjectNode? SelectedProject
+  {
+    get => _selectedProject;
+    set
+    {
+      if (SetField(ref _selectedProject, value))
+      {
+        RefreshProjectTree();
+        RefreshPackageGrid();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedProjectVersion)));
+        RaiseCommandStates();
+      }
+    }
+  }
+
+  public string Status
+  {
+    get => _status;
+    private set => SetField(ref _status, value);
+  }
+
+  public string WorkflowLog
+  {
+    get => _workflowLog;
+    private set => SetField(ref _workflowLog, value);
+  }
+
+  public bool IsBusy
+  {
+    get => _isBusy;
+    private set
+    {
+      if (SetField(ref _isBusy, value))
+      {
+        RaiseCommandStates();
+      }
+    }
+  }
+
+  private bool HasPackageRows => Projects.SelectMany(project => project.PackageUpdates).Any();
+
+  private void BrowseSolution()
+  {
+    var dialog = new OpenFileDialog
+    {
+      Filter = "Visual Studio solution (*.sln)|*.sln",
+      Title = "Select solution"
+    };
+
+    if (dialog.ShowDialog() != true)
+    {
+      return;
+    }
+
+    LoadSolution(dialog.FileName);
+  }
+
+  private void LoadSolution(string solutionPath)
+  {
+    SolutionPath = solutionPath;
+    Projects.Clear();
+    ProjectTree.Clear();
+    PackageUpdates.Clear();
+
+    foreach (var project in _solutionAnalyzer.LoadProjects(solutionPath))
+    {
+      project.ProjectVersion = _projectVersionService.ReadVersion(project);
+      Projects.Add(project);
+      ProjectTree.Add(project);
+    }
+
+    SelectedProject = Projects.FirstOrDefault();
+    NewVersion = ResolveInitialVersion();
+    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SolutionVersion)));
+    RaiseCommandStates();
+    AppendLog("Solution loaded", $"Path: {solutionPath}{Environment.NewLine}Projects: {Projects.Count}{Environment.NewLine}Current version: {SolutionVersion}");
+  }
+
+  private void SetSolutionVersion()
+  {
+    var version = NewVersion.Trim();
+    foreach (var project in Projects)
+    {
+      _projectVersionService.WriteVersion(project, version);
+    }
+
+    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedProjectVersion)));
+    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SolutionVersion)));
+    AppendLog("Version set", $"Version {version} was written to {Projects.Count} project(s).{Environment.NewLine}{string.Join(Environment.NewLine, Projects.Select(project => $"- {project.Name}: {version}"))}");
+  }
+
+  private async Task CheckUpdatesAsync()
+  {
+    await RunStageAsync("Checking NuGet updates...", async () =>
+    {
+      if (Projects.Count == 0)
+      {
+        AppendLog("Check updates skipped", "No projects were loaded from the selected solution.");
+        return;
+      }
+
+      var sources = ActiveNuGetSources();
+      var log = new StringBuilder();
+      log.AppendLine("NuGet sources:");
+      foreach (var source in sources.DefaultIfEmpty("<default NuGet configuration>"))
+      {
+        log.AppendLine($"- {source}");
+      }
+      log.AppendLine();
+
+      foreach (var project in Projects)
+      {
+        project.PackageUpdates.Clear();
+        try
+        {
+          log.AppendLine($"Checking {project.Name}...");
+          var updates = await _nugetUpdateService.CheckUpdatesAsync(project, sources);
+          foreach (var update in updates)
+          {
+            project.PackageUpdates.Add(update);
+          }
+
+          project.RefreshDisplayName();
+          log.AppendLine($"{project.Name}: {project.PackageUpdates.Count} package(s) found");
+          foreach (var update in project.PackageUpdates)
+          {
+            log.AppendLine($"  - {update.PackageName}: {update.CurrentVersion} -> {update.LatestVersion}");
+          }
+        }
+        catch (Exception exception)
+        {
+          log.AppendLine($"{project.Name}: check failed");
+          log.AppendLine($"  {exception.Message}");
+        }
+      }
+
+      RefreshPackageGrid();
+      var updateCount = Projects.Sum(project => project.PackageUpdates.Count);
+      log.AppendLine();
+      log.AppendLine($"Total: {updateCount} package(s) found across {Projects.Count} project(s).");
+      AppendLog("Check updates completed", log.ToString().TrimEnd());
+      RaiseCommandStates();
+    });
+  }
+
+  private async Task ApplyUpdatesAsync()
+  {
+    await RunStageAsync("Applying selected package versions...", async () =>
+    {
+      var sources = ActiveNuGetSources();
+      var log = new StringBuilder();
+      var appliedCount = 0;
+
+      foreach (var project in Projects)
+      {
+        foreach (var update in project.PackageUpdates.Where(update => update.IsSelected && update.CanApply))
+        {
+          log.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion}");
+          var result = await _nugetUpdateService.ApplyUpdateAsync(project, update, sources);
+          if (!result.Succeeded)
+          {
+            AppendLog("Apply versions failed", $"{project.Name}: {update.PackageName} -> {update.TargetVersion}{Environment.NewLine}{FormatProcessResult(result)}");
+            throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
+          }
+
+          appliedCount++;
+        }
+      }
+
+      if (appliedCount == 0)
+      {
+        log.AppendLine("No selected package updates to apply.");
+      }
+
+      log.AppendLine();
+      log.AppendLine($"Applied package updates: {appliedCount}");
+      AppendLog("Apply versions completed", log.ToString().TrimEnd());
+    });
+  }
+
+  private async Task BuildAsync()
+  {
+    await RunStageAsync("Building solution...", async () =>
+    {
+      var result = await _releaseWorkflowService.BuildAsync(SolutionPath, MSBuildPath);
+      if (!result.Succeeded)
+      {
+        AppendLog("Build failed", FormatProcessResult(result));
+        throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
+      }
+
+      AppendLog("Build succeeded", FormatProcessResult(result));
+    });
+  }
+
+  private async Task CommitAndPushAsync()
+  {
+    await RunStageAsync("Committing and pushing changes...", async () =>
+    {
+      var repositoryPath = Path.GetDirectoryName(SolutionPath) ?? Environment.CurrentDirectory;
+      var commit = await _releaseWorkflowService.CommitAsync(repositoryPath, CommitMessage.Trim());
+      if (!commit.Succeeded)
+      {
+        AppendLog("Commit failed", $"Message: {CommitMessage.Trim()}{Environment.NewLine}{FormatProcessResult(commit)}");
+        throw new InvalidOperationException(commit.Error.Length > 0 ? commit.Error : commit.Output);
+      }
+
+      var push = await _releaseWorkflowService.PushAsync(repositoryPath);
+      if (!push.Succeeded)
+      {
+        AppendLog("Push failed", FormatProcessResult(push));
+        throw new InvalidOperationException(push.Error.Length > 0 ? push.Error : push.Output);
+      }
+
+      AppendLog("Commit and push completed", $"Message: {CommitMessage.Trim()}{Environment.NewLine}{FormatProcessResult(commit)}{Environment.NewLine}{FormatProcessResult(push)}");
+    });
+  }
+
+  private async Task CreateAndPushTagAsync()
+  {
+    await RunStageAsync("Creating and pushing tag...", async () =>
+    {
+      var repositoryPath = Path.GetDirectoryName(SolutionPath) ?? Environment.CurrentDirectory;
+      var tagName = ResolveTagName();
+      var tag = await _releaseWorkflowService.CreateTagAsync(repositoryPath, tagName);
+      if (!tag.Succeeded)
+      {
+        AppendLog("Create tag failed", $"Tag: {tagName}{Environment.NewLine}{FormatProcessResult(tag)}");
+        throw new InvalidOperationException(tag.Error.Length > 0 ? tag.Error : tag.Output);
+      }
+
+      var pushTag = await _releaseWorkflowService.PushTagAsync(repositoryPath, tagName);
+      if (!pushTag.Succeeded)
+      {
+        AppendLog("Push tag failed", $"Tag: {tagName}{Environment.NewLine}{FormatProcessResult(pushTag)}");
+        throw new InvalidOperationException(pushTag.Error.Length > 0 ? pushTag.Error : pushTag.Output);
+      }
+
+      AppendLog("Tag created and pushed", $"Tag: {tagName}{Environment.NewLine}{FormatProcessResult(tag)}{Environment.NewLine}{FormatProcessResult(pushTag)}");
+    });
+  }
+
+  private async Task RunStageAsync(string stage, Func<Task> action)
+  {
+    try
+    {
+      IsBusy = true;
+      AppendLog("Stage started", stage);
+      await action();
+    }
+    catch (Exception exception)
+    {
+      Status = exception.Message;
+      AppendLog("Stage failed", exception.Message);
+    }
+    finally
+    {
+      IsBusy = false;
+    }
+  }
+
+  private void SelectAllPackageUpdates()
+  {
+    var selectedCount = 0;
+    foreach (var update in Projects.SelectMany(project => project.PackageUpdates).Where(update => update.CanApply))
+    {
+      update.IsSelected = true;
+      selectedCount++;
+    }
+
+    RefreshPackageGrid();
+    AppendLog("Package selection changed", $"Use was enabled for {selectedCount} package row(s) across all projects.");
+    RaiseCommandStates();
+  }
+
+  private void ClearAllPackageUpdates()
+  {
+    var clearedCount = 0;
+    foreach (var update in Projects.SelectMany(project => project.PackageUpdates))
+    {
+      if (update.IsSelected)
+      {
+        clearedCount++;
+      }
+
+      update.IsSelected = false;
+    }
+
+    RefreshPackageGrid();
+    AppendLog("Package selection changed", $"Use was disabled for {clearedCount} selected package row(s) across all projects.");
+    RaiseCommandStates();
+  }
+
+  private void RefreshProjectTree()
+  {
+    RefreshPackageGrid();
+  }
+
+  private void RefreshPackageGrid()
+  {
+    PackageUpdates.Clear();
+    if (SelectedProject is null)
+    {
+      return;
+    }
+
+    foreach (var update in SelectedProject.PackageUpdates)
+    {
+      PackageUpdates.Add(update);
+    }
+  }
+
+  private void RaiseCommandStates()
+  {
+    SetSolutionVersionCommand.RaiseCanExecuteChanged();
+    SelectAllPackageUpdatesCommand.RaiseCanExecuteChanged();
+    ClearAllPackageUpdatesCommand.RaiseCanExecuteChanged();
+    CheckUpdatesCommand.RaiseCanExecuteChanged();
+    ApplyUpdatesCommand.RaiseCanExecuteChanged();
+    BuildCommand.RaiseCanExecuteChanged();
+    CommitCommand.RaiseCanExecuteChanged();
+    CreateTagCommand.RaiseCanExecuteChanged();
+  }
+
+  private void SaveNuGetSources()
+  {
+    RemoveEmptyNuGetSources();
+    _sourceSettingsService.Save(new ApplicationSettings
+    {
+      MSBuildPath = MSBuildPath,
+      NuGetSources = NuGetSources
+    });
+    AppendLog(
+        "Settings saved",
+        $"MSBuild: {MSBuildPath}{Environment.NewLine}NuGet sources:{Environment.NewLine}{string.Join(Environment.NewLine, NuGetSources.Select(source => $"- {source.Source}"))}");
+  }
+
+  private void RemoveEmptyNuGetSources()
+  {
+    foreach (var emptySource in NuGetSources.Where(source => string.IsNullOrWhiteSpace(source.Source)).ToList())
+    {
+      NuGetSources.Remove(emptySource);
+    }
+  }
+
+  private IReadOnlyCollection<string> ActiveNuGetSources()
+      => NuGetSources
+          .Select(source => source.Source.Trim())
+          .Where(source => !string.IsNullOrWhiteSpace(source))
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .ToList();
+
+  private string ResolveInitialVersion()
+  {
+    var versions = Projects
+        .Select(project => project.ProjectVersion)
+        .Where(version => !string.IsNullOrWhiteSpace(version))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return versions.Count == 1 ? versions[0] : string.Empty;
+  }
+
+  private string ResolveSolutionVersion()
+  {
+    var versions = Projects
+        .Select(project => project.ProjectVersion)
+        .Where(version => !string.IsNullOrWhiteSpace(version))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return versions.Count switch
+    {
+      0 => string.Empty,
+      1 => versions[0],
+      _ => "Mixed"
+    };
+  }
+
+  private string ResolveTagName()
+  {
+    var version = NewVersion.Trim();
+    if (string.IsNullOrWhiteSpace(version))
+    {
+      return string.Empty;
+    }
+
+    var pattern = string.IsNullOrWhiteSpace(TagPattern) ? "{version}" : TagPattern.Trim();
+    return pattern.Replace("{version}", version, StringComparison.OrdinalIgnoreCase);
+  }
+
+  private void AppendLog(string title, string details)
+  {
+    Status = title;
+    var entry = new StringBuilder();
+    entry.AppendLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {title}");
+    if (!string.IsNullOrWhiteSpace(details))
+    {
+      entry.AppendLine(details.TrimEnd());
+    }
+    entry.AppendLine();
+
+    WorkflowLog += entry.ToString();
+  }
+
+  private static string FormatProcessResult(ProcessResult result)
+  {
+    var builder = new StringBuilder();
+    builder.AppendLine($"Exit code: {result.ExitCode}");
+    AppendOutput(builder, "Output", result.Output);
+    AppendOutput(builder, "Error", result.Error);
+    return builder.ToString().TrimEnd();
+  }
+
+  private static void AppendOutput(StringBuilder builder, string title, string value)
+  {
+    if (string.IsNullOrWhiteSpace(value))
+    {
+      return;
+    }
+
+    builder.AppendLine($"{title}:");
+    builder.AppendLine(value.TrimEnd());
+  }
+
+  private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+  {
+    if (EqualityComparer<T>.Default.Equals(field, value))
+    {
+      return false;
+    }
+
+    field = value;
+    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    return true;
+  }
+}

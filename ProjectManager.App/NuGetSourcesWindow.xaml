@@ -1,0 +1,99 @@
+<Window x:Class="ProjectManager.App.NuGetSourcesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Build and NuGet settings"
+        Height="430"
+        Width="760"
+        MinHeight="360"
+        MinWidth="640"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F7FA">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="White"
+                BorderBrush="#DCE3EC"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="MSBuild.exe"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Margin="0,0,10,0" />
+                <TextBox Grid.Column="1"
+                         Text="{Binding MSBuildPath, UpdateSourceTrigger=PropertyChanged}"
+                         Height="34"
+                         VerticalContentAlignment="Center"
+                         Margin="0,0,8,0" />
+                <Button Grid.Column="2"
+                        Content="Browse"
+                        Click="BrowseMSBuild_Click"
+                        Padding="12,7" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Background="White"
+                BorderBrush="#DCE3EC"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12">
+            <DataGrid ItemsSource="{Binding NuGetSources}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="True"
+                      HeadersVisibility="Column"
+                      RowHeaderWidth="0"
+                      GridLinesVisibility="Horizontal">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Source URL"
+                                        Binding="{Binding Source, UpdateSourceTrigger=PropertyChanged}"
+                                        Width="*" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="Add source"
+                        Command="{Binding AddNuGetSourceCommand}"
+                        Padding="12,7"
+                        Margin="0,0,8,0" />
+                <Button Content="Remove empty"
+                        Command="{Binding RemoveEmptyNuGetSourcesCommand}"
+                        Padding="12,7" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="Save"
+                        Command="{Binding SaveNuGetSourcesCommand}"
+                        IsDefault="True"
+                        Padding="18,7"
+                        Margin="0,0,8,0"
+                        Click="Save_Click" />
+                <Button Content="Close"
+                        IsCancel="True"
+                        Padding="18,7" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
