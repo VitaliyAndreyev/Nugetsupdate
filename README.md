@@ -15,7 +15,7 @@ Project Manager — настольное WPF-приложение для Windows
 - проверка верхнеуровневых NuGet-зависимостей с автоматическим определением целевых фреймворков каждого проекта;
 - поиск актуальных стабильных версий пакетов в настроенных NuGet V2/V3-источниках;
 - выбор любой стабильной целевой версии между установленной и новейшей доступной;
-- единая установка выбранной NuGet-версии во всех проектах solution, где эта версия доступна для соответствующего пакета;
+- отдельный выбор целевой версии для каждого уникального NuGet-пакета и её установка во всех проектах solution, которые используют этот пакет;
 - выбор обновлений отдельно, выбор всех доступных обновлений или очистка выбора;
 - применение выбранных версий через `dotnet add package`;
 - единая запись `Version`, `FileVersion` и `AssemblyVersion` во все проекты решения;
@@ -57,8 +57,8 @@ dotnet run --project ProjectManager.App\ProjectManager.App.csproj
    - укажите полный путь к `MSBuild.exe`;
    - добавьте адреса NuGet V2/V3 feeds и сохраните настройки.
 3. Нажмите **Check updates**. Для выбранного в дереве проекта появится таблица пакетов с текущей и последней стабильной версией.
-4. Выберите общий **Package target** и нажмите **Set for all**, чтобы назначить эту версию всем подходящим пакетам во всех проектах. Пакеты, для которых такой версии нет, будут исключены из применения.
-5. При необходимости скорректируйте отдельные пакеты в колонке **Target**, отметьте нужные строки или нажмите **Use all**, затем **Apply versions**.
+4. Откройте **Package targets...**. В solution-wide таблице каждый пакет отображается один раз вместе с количеством проектов, текущими версиями и собственным списком **Target**. Выберите целевую версию каждого пакета и нажмите **Apply targets**.
+5. При необходимости скорректируйте отдельные строки в основной таблице, отметьте нужные обновления или нажмите **Use all**, затем **Apply versions**.
 6. При необходимости задайте общую версию проектов и нажмите **Set version**.
 7. Нажмите **Build**, чтобы выполнить Restore и Release-сборку через MSBuild.
 8. Укажите сообщение и нажмите **Commit**. Приложение выполнит добавление всех изменений, коммит и `git push`.
@@ -165,7 +165,7 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 - checks top-level NuGet dependencies while automatically detecting each project's target frameworks;
 - finds the latest stable package versions in configured NuGet V2/V3 sources;
 - allows any stable target version between the installed and latest available version to be selected;
-- applies one selected NuGet version across every project where the corresponding package offers that version;
+- selects a separate target version for every unique NuGet package and applies it across all projects that reference that package;
 - supports selecting individual updates, selecting all available updates, and clearing the selection;
 - applies selected versions through `dotnet add package`;
 - writes the same `Version`, `FileVersion`, and `AssemblyVersion` to every project in the solution;
@@ -207,8 +207,8 @@ The Release build is written to `ProjectManager.App\bin\Release\net8.0-windows`.
    - enter the full path to `MSBuild.exe`;
    - add the required NuGet V2/V3 feed URLs and save the settings.
 3. Select **Check updates**. The table for the selected project displays each package with its current and latest stable version.
-4. Choose a common **Package target** and select **Set for all** to assign that version to every matching package in every project. Packages that do not offer the selected version are excluded.
-5. If necessary, adjust individual packages in the **Target** column. Select individual rows or choose **Use all**, then select **Apply versions**.
+4. Open **Package targets...**. The solution-wide table shows every package once, together with its project count, current versions, and individual **Target** list. Choose each package target and select **Apply targets**.
+5. If necessary, adjust individual rows in the main table. Select the required updates or choose **Use all**, then select **Apply versions**.
 6. If required, enter a common project version and select **Set version**.
 7. Select **Build** to restore packages and build the solution in Release mode through MSBuild.
 8. Enter a commit message and select **Commit**. The application stages all changes, creates a commit, and runs `git push`.

@@ -1,0 +1,104 @@
+<Window x:Class="ProjectManager.App.PackageTargetsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Solution package targets"
+        Height="620"
+        Width="980"
+        MinHeight="420"
+        MinWidth="760"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F7FA">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Package targets for the entire solution"
+                       FontSize="18"
+                       FontWeight="SemiBold" />
+            <TextBlock Text="Choose one version per package. The selection is applied to every project that references that package."
+                       Foreground="#607086"
+                       Margin="0,5,0,0" />
+        </StackPanel>
+
+        <Border Grid.Row="2"
+                Background="White"
+                BorderBrush="#DCE3EC"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12">
+            <DataGrid ItemsSource="{Binding SolutionPackageTargets}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      GridLinesVisibility="Horizontal"
+                      HeadersVisibility="Column"
+                      RowHeaderWidth="0">
+                <DataGrid.Columns>
+                    <DataGridCheckBoxColumn Header="Use"
+                                            Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}"
+                                            Width="56" />
+                    <DataGridTextColumn Header="Package"
+                                        Binding="{Binding PackageName}"
+                                        IsReadOnly="True"
+                                        Width="2*" />
+                    <DataGridTemplateColumn Header="Projects" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ProjectCount}"
+                                           ToolTip="{Binding ProjectNames}"
+                                           HorizontalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="Current"
+                                        Binding="{Binding CurrentVersions}"
+                                        IsReadOnly="True"
+                                        Width="1.5*" />
+                    <DataGridTemplateColumn Header="Target" Width="190">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ComboBox ItemsSource="{Binding AvailableVersions}"
+                                          SelectedItem="{Binding TargetVersion, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEnabled="{Binding IsSelected}"
+                                          MinWidth="165" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="Latest for all"
+                        Command="{Binding SelectLatestPackageTargetsCommand}"
+                        Padding="14,7"
+                        Margin="0,0,8,0" />
+                <Button Content="Clear selection"
+                        Command="{Binding ClearPackageTargetsCommand}"
+                        Padding="14,7" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="Apply targets"
+                        IsDefault="True"
+                        Padding="18,7"
+                        Margin="0,0,8,0"
+                        Click="Apply_Click" />
+                <Button Content="Close"
+                        IsCancel="True"
+                        Padding="18,7" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

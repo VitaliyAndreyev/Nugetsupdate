@@ -21,7 +21,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
   private ProjectNode? _selectedProject;
   private string _solutionPath = string.Empty;
   private string _newVersion = string.Empty;
-  private string _packageTargetVersion = string.Empty;
   private string _tagPattern = "V_{version}";
   private string _commitMessage = "Update NuGet packages";
   private string _msBuildPath = string.Empty;
@@ -40,7 +39,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     SetSolutionVersionCommand = new RelayCommand(SetSolutionVersion, () => Projects.Count > 0 && !string.IsNullOrWhiteSpace(NewVersion) && !IsBusy);
     SelectAllPackageUpdatesCommand = new RelayCommand(SelectAllPackageUpdates, () => HasPackageRows && !IsBusy);
     ClearAllPackageUpdatesCommand = new RelayCommand(ClearAllPackageUpdates, () => HasPackageRows && !IsBusy);
-    SetAllPackageTargetVersionCommand = new RelayCommand(SetAllPackageTargetVersion, () => HasPackageRows && !string.IsNullOrWhiteSpace(PackageTargetVersion) && !IsBusy);
+    ApplyPackageTargetsCommand = new RelayCommand(ApplyPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
+    SelectLatestPackageTargetsCommand = new RelayCommand(SelectLatestPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
+    ClearPackageTargetsCommand = new RelayCommand(ClearPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
     CheckUpdatesCommand = new AsyncRelayCommand(CheckUpdatesAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
     ApplyUpdatesCommand = new AsyncRelayCommand(ApplyUpdatesAsync, () => Projects.SelectMany(project => project.PackageUpdates).Any(update => update.IsSelected && update.CanApply) && !IsBusy);
     BuildCommand = new AsyncRelayCommand(BuildAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
@@ -60,7 +61,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
   public ObservableCollection<ProjectNode> Projects { get; } = [];
   public ObservableCollection<ProjectNode> ProjectTree { get; } = [];
   public ObservableCollection<PackageUpdate> PackageUpdates { get; } = [];
-  public ObservableCollection<string> PackageTargetVersions { get; } = [];
+  public ObservableCollection<SolutionPackageTarget> SolutionPackageTargets { get; } = [];
   public ObservableCollection<NuGetSourceSetting> NuGetSources { get; } = [];
 
   public RelayCommand BrowseSolutionCommand { get; }
@@ -70,7 +71,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
   public RelayCommand SetSolutionVersionCommand { get; }
   public RelayCommand SelectAllPackageUpdatesCommand { get; }
   public RelayCommand ClearAllPackageUpdatesCommand { get; }
-  public RelayCommand SetAllPackageTargetVersionCommand { get; }
+  public RelayCommand ApplyPackageTargetsCommand { get; }
+  public RelayCommand SelectLatestPackageTargetsCommand { get; }
+  public RelayCommand ClearPackageTargetsCommand { get; }
   public AsyncRelayCommand CheckUpdatesCommand { get; }
   public AsyncRelayCommand ApplyUpdatesCommand { get; }
   public AsyncRelayCommand BuildCommand { get; }
@@ -93,18 +96,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SetSolutionVersionCommand.RaiseCanExecuteChanged();
         CreateTagCommand.RaiseCanExecuteChanged();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ResolvedTagName)));
-      }
-    }
-  }
-
-  public string PackageTargetVersion
-  {
-    get => _packageTargetVersion;
-    set
-    {
-      if (SetField(ref _packageTargetVersion, value))
-      {
-        SetAllPackageTargetVersionCommand.RaiseCanExecuteChanged();
       }
     }
   }
@@ -209,8 +200,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     Projects.Clear();
     ProjectTree.Clear();
     PackageUpdates.Clear();
-    PackageTargetVersions.Clear();
-    PackageTargetVersion = string.Empty;
+    SolutionPackageTargets.Clear();
 
     foreach (var project in _solutionAnalyzer.LoadProjects(solutionPath))
     {
@@ -285,7 +275,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
       }
 
       RefreshPackageGrid();
-      RefreshPackageTargetVersions();
+      RefreshSolutionPackageTargets();
       var updateCount = Projects.Sum(project => project.PackageUpdates.Count);
       log.AppendLine();
       log.AppendLine($"Total: {updateCount} package(s) found across {Projects.Count} project(s).");
@@ -442,46 +432,81 @@ public sealed class MainViewModel : INotifyPropertyChanged
     RaiseCommandStates();
   }
 
-  private void SetAllPackageTargetVersion()
+  private void ApplyPackageTargets()
   {
-    var targetVersion = PackageTargetVersion.Trim();
     var updatedCount = 0;
     var alreadyCurrentCount = 0;
     var unavailableCount = 0;
+    var log = new StringBuilder();
 
-    foreach (var update in Projects.SelectMany(project => project.PackageUpdates))
+    foreach (var packageTarget in SolutionPackageTargets)
     {
-      var availableVersion = update.AvailableVersions
-          .FirstOrDefault(version => string.Equals(version, targetVersion, StringComparison.OrdinalIgnoreCase));
+      var packageUpdates = Projects
+          .SelectMany(project => project.PackageUpdates)
+          .Where(update => string.Equals(update.PackageName, packageTarget.PackageName, StringComparison.OrdinalIgnoreCase))
+          .ToList();
 
-      if (availableVersion is null)
+      if (!packageTarget.IsSelected || string.IsNullOrWhiteSpace(packageTarget.TargetVersion))
       {
-        update.IsSelected = false;
-        unavailableCount++;
+        foreach (var update in packageUpdates)
+        {
+          update.IsSelected = false;
+        }
+
         continue;
       }
 
-      update.TargetVersion = availableVersion;
-      var requiresUpdate = !string.Equals(update.CurrentVersion, availableVersion, StringComparison.OrdinalIgnoreCase);
-      update.IsSelected = requiresUpdate;
-      if (requiresUpdate)
+      log.AppendLine($"- {packageTarget.PackageName}: {packageTarget.TargetVersion} ({packageUpdates.Count} project(s))");
+      foreach (var update in packageUpdates)
       {
-        updatedCount++;
-      }
-      else
-      {
-        alreadyCurrentCount++;
+        var availableVersion = update.AvailableVersions
+            .FirstOrDefault(version => string.Equals(version, packageTarget.TargetVersion, StringComparison.OrdinalIgnoreCase));
+        if (availableVersion is null)
+        {
+          update.IsSelected = false;
+          unavailableCount++;
+          continue;
+        }
+
+        update.TargetVersion = availableVersion;
+        var requiresUpdate = !string.Equals(update.CurrentVersion, availableVersion, StringComparison.OrdinalIgnoreCase);
+        update.IsSelected = requiresUpdate;
+        if (requiresUpdate)
+        {
+          updatedCount++;
+        }
+        else
+        {
+          alreadyCurrentCount++;
+        }
       }
     }
 
     RefreshPackageGrid();
     AppendLog(
-        "Solution package target set",
-        $"Target version: {targetVersion}{Environment.NewLine}" +
+        "Solution package targets applied",
+        $"Package targets:{Environment.NewLine}{log}" +
         $"Selected updates: {updatedCount}{Environment.NewLine}" +
         $"Already at target: {alreadyCurrentCount}{Environment.NewLine}" +
-        $"Version unavailable for package: {unavailableCount}");
+        $"Unavailable target occurrences: {unavailableCount}");
     RaiseCommandStates();
+  }
+
+  private void SelectLatestPackageTargets()
+  {
+    foreach (var packageTarget in SolutionPackageTargets.Where(target => target.AvailableVersions.Count > 0))
+    {
+      packageTarget.TargetVersion = packageTarget.AvailableVersions[0];
+      packageTarget.IsSelected = true;
+    }
+  }
+
+  private void ClearPackageTargets()
+  {
+    foreach (var packageTarget in SolutionPackageTargets)
+    {
+      packageTarget.IsSelected = false;
+    }
   }
 
   private void RefreshProjectTree()
@@ -503,24 +528,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
   }
 
-  private void RefreshPackageTargetVersions()
+  private void RefreshSolutionPackageTargets()
   {
-    var selectedVersion = PackageTargetVersion;
-    PackageTargetVersions.Clear();
+    SolutionPackageTargets.Clear();
 
-    foreach (var version in Projects
+    var packageGroups = Projects
         .SelectMany(project => project.PackageUpdates)
-        .SelectMany(update => update.AvailableVersions)
-        .Where(version => !string.IsNullOrWhiteSpace(version))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderByDescending(version => version, PackageVersionComparer.Instance))
-    {
-      PackageTargetVersions.Add(version);
-    }
+        .GroupBy(update => update.PackageName, StringComparer.OrdinalIgnoreCase)
+        .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase);
 
-    PackageTargetVersion = PackageTargetVersions.Any(version => string.Equals(version, selectedVersion, StringComparison.OrdinalIgnoreCase))
-        ? PackageTargetVersions.First(version => string.Equals(version, selectedVersion, StringComparison.OrdinalIgnoreCase))
-        : PackageTargetVersions.FirstOrDefault() ?? string.Empty;
+    foreach (var packageGroup in packageGroups)
+    {
+      var updates = packageGroup.ToList();
+      var currentVersions = updates
+          .Select(update => update.CurrentVersion)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .OrderByDescending(version => version, PackageVersionComparer.Instance)
+          .ToList();
+      var projectNames = updates
+          .Select(update => update.ProjectName)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+          .ToList();
+      var commonVersions = updates[0].AvailableVersions
+          .Where(version => updates.All(update => update.AvailableVersions.Any(candidate => string.Equals(candidate, version, StringComparison.OrdinalIgnoreCase))))
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .OrderByDescending(version => version, PackageVersionComparer.Instance)
+          .ToList();
+
+      var target = new SolutionPackageTarget
+      {
+        PackageName = packageGroup.Key,
+        ProjectCount = projectNames.Count,
+        ProjectNames = string.Join(Environment.NewLine, projectNames),
+        CurrentVersions = currentVersions.Count == 1 ? currentVersions[0] : $"Mixed: {string.Join(", ", currentVersions)}",
+        IsSelected = commonVersions.Count > 0 && updates.Any(update => update.IsSelected)
+      };
+
+      foreach (var version in commonVersions)
+      {
+        target.AvailableVersions.Add(version);
+      }
+
+      target.TargetVersion = commonVersions.FirstOrDefault() ?? string.Empty;
+      SolutionPackageTargets.Add(target);
+    }
   }
 
   private void RaiseCommandStates()
@@ -528,7 +580,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     SetSolutionVersionCommand.RaiseCanExecuteChanged();
     SelectAllPackageUpdatesCommand.RaiseCanExecuteChanged();
     ClearAllPackageUpdatesCommand.RaiseCanExecuteChanged();
-    SetAllPackageTargetVersionCommand.RaiseCanExecuteChanged();
+    ApplyPackageTargetsCommand.RaiseCanExecuteChanged();
+    SelectLatestPackageTargetsCommand.RaiseCanExecuteChanged();
+    ClearPackageTargetsCommand.RaiseCanExecuteChanged();
     CheckUpdatesCommand.RaiseCanExecuteChanged();
     ApplyUpdatesCommand.RaiseCanExecuteChanged();
     BuildCommand.RaiseCanExecuteChanged();

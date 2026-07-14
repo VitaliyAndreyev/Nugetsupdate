@@ -176,8 +176,6 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="150" />
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="24" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -189,22 +187,13 @@
                                Text="Check package versions"
                                Style="{StaticResource PanelTitle}"
                                Margin="0,0,16,0" />
-                    <TextBlock Grid.Column="3"
-                               Text="Package target"
-                               Margin="0,0,8,0" />
-                    <ComboBox Grid.Column="4"
-                              ItemsSource="{Binding PackageTargetVersions}"
-                              SelectedItem="{Binding PackageTargetVersion, UpdateSourceTrigger=PropertyChanged}"
-                              Height="34"
-                              VerticalContentAlignment="Center" />
+                    <Button Grid.Column="3"
+                            Content="Package targets..."
+                            Click="PackageTargets_Click" />
                     <Button Grid.Column="5"
-                            Content="Set for all"
-                            Command="{Binding SetAllPackageTargetVersionCommand}"
-                            Margin="8,0,0,0" />
-                    <Button Grid.Column="7"
                             Content="Use all"
                             Command="{Binding SelectAllPackageUpdatesCommand}" />
-                    <Button Grid.Column="8"
+                    <Button Grid.Column="6"
                             Content="Clear use"
                             Command="{Binding ClearAllPackageUpdatesCommand}"
                             Margin="0" />
@@ -219,49 +208,61 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Background="White" BorderBrush="#DCE3EC" BorderThickness="1" CornerRadius="8" Padding="14">
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="White" BorderBrush="#DCE3EC" BorderThickness="1" CornerRadius="8" Padding="14">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="10" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="170" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Solution update"
+                               Style="{StaticResource PanelTitle}" />
+                    <Button Grid.Column="1"
+                            Content="Apply versions"
+                            Command="{Binding ApplyUpdatesCommand}" />
+                    <Button Grid.Column="2"
+                            Content="Build"
+                            Command="{Binding BuildCommand}" />
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2" Background="White" BorderBrush="#DCE3EC" BorderThickness="1" CornerRadius="8" Padding="14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="170" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="150" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="Solution update"
-                               Style="{StaticResource PanelTitle}" />
-                    <Button Grid.Row="0" Grid.Column="1"
-                            Content="Apply versions"
-                            Command="{Binding ApplyUpdatesCommand}" />
-                    <Button Grid.Row="0" Grid.Column="2"
-                            Content="Build"
-                            Command="{Binding BuildCommand}" />
-                    <TextBlock Grid.Row="2" Grid.Column="0"
+                    <TextBlock Grid.Column="0"
                                Text="Project versions"
                                Style="{StaticResource PanelTitle}" />
-                    <TextBlock Grid.Row="2" Grid.Column="4"
+                    <TextBlock Grid.Column="1"
                                Text="Version"
                                Margin="0,0,8,0" />
-                    <TextBox Grid.Row="2" Grid.Column="5"
+                    <TextBox Grid.Column="2"
                              Text="{Binding NewVersion, UpdateSourceTrigger=PropertyChanged}"
                              Height="34"
                              VerticalContentAlignment="Center" />
-                    <Button Grid.Row="2" Grid.Column="6"
+                    <Button Grid.Column="3"
                             Content="Set version"
                             Command="{Binding SetSolutionVersionCommand}"
                             Margin="8,0,0,0" />
                 </Grid>
             </Border>
+            </Grid>
 
             <Border Grid.Row="2" Background="White" BorderBrush="#DCE3EC" BorderThickness="1" CornerRadius="8" Padding="14">
                 <Grid>
