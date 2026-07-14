@@ -58,7 +58,7 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
       }
 
       var newerVersions = availableVersions
-          .Where(version => VersionStringComparer.Instance.Compare(version, package.CurrentVersion) > 0)
+          .Where(version => PackageVersionComparer.Instance.Compare(version, package.CurrentVersion) > 0)
           .ToList();
       var latestVersion = newerVersions.FirstOrDefault() ?? package.CurrentVersion;
 
@@ -69,7 +69,7 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
         CurrentVersion = package.CurrentVersion,
         LatestVersion = latestVersion,
         TargetVersion = latestVersion,
-        IsSelected = VersionStringComparer.Instance.Compare(latestVersion, package.CurrentVersion) > 0
+        IsSelected = PackageVersionComparer.Instance.Compare(latestVersion, package.CurrentVersion) > 0
       };
 
       foreach (var version in newerVersions)
@@ -191,7 +191,7 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
     var releaseVersions = versions
         .Where(IsAllowedVersion)
         .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderByDescending(version => version, VersionStringComparer.Instance)
+        .OrderByDescending(version => version, PackageVersionComparer.Instance)
         .ToList();
 
     if (releaseVersions.Count == 0)
@@ -310,50 +310,4 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
       => !version.Contains("alpha", StringComparison.OrdinalIgnoreCase) &&
          !version.Contains('-', StringComparison.OrdinalIgnoreCase);
 
-  private sealed class VersionStringComparer : IComparer<string>
-  {
-    public static readonly VersionStringComparer Instance = new();
-
-    public int Compare(string? x, string? y)
-    {
-      if (ReferenceEquals(x, y))
-      {
-        return 0;
-      }
-
-      if (x is null)
-      {
-        return -1;
-      }
-
-      if (y is null)
-      {
-        return 1;
-      }
-
-      var leftParts = SplitVersion(x);
-      var rightParts = SplitVersion(y);
-      var maxLength = Math.Max(leftParts.Length, rightParts.Length);
-
-      for (var index = 0; index < maxLength; index++)
-      {
-        var left = index < leftParts.Length ? leftParts[index] : 0;
-        var right = index < rightParts.Length ? rightParts[index] : 0;
-        var comparison = left.CompareTo(right);
-        if (comparison != 0)
-        {
-          return comparison;
-        }
-      }
-
-      return string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static long[] SplitVersion(string version)
-        => version
-            .Split('-', 2)[0]
-            .Split('.', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => long.TryParse(part, out var number) ? number : 0)
-            .ToArray();
-  }
 }
