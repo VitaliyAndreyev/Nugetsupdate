@@ -21,7 +21,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
   private ProjectNode? _selectedProject;
   private string _solutionPath = string.Empty;
   private string _newVersion = string.Empty;
-  private string _tagPattern = "v_{version}";
+  private string _tagPattern = "V_{version}";
   private string _commitMessage = "Update NuGet packages";
   private string _msBuildPath = string.Empty;
   private string _status = "Select a solution to begin.";
