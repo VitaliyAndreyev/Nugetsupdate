@@ -12,25 +12,55 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
 
   public async Task<IReadOnlyList<PackageUpdate>> CheckUpdatesAsync(ProjectNode project, IReadOnlyCollection<string> sources, CancellationToken cancellationToken = default)
   {
-    var result = await commandRunner.RunAsync($"dotnet list \"{project.Path}\" package --framework net4.8 --include-transitive --format json",
-        Path.GetDirectoryName(project.Path) ?? Environment.CurrentDirectory,
+    var workingDirectory = Path.GetDirectoryName(project.Path) ?? Environment.CurrentDirectory;
+    var result = await commandRunner.RunAsync($"dotnet list \"{project.Path}\" package --include-transitive --format json",
+        workingDirectory,
         cancellationToken);
+
+    var packages = result.Succeeded
+        ? ParsePackageReferences(project.Name, result.Output)
+        : [];
+
+    if (packages.Count == 0)
+    {
+      var netFrameworkResult = await commandRunner.RunAsync($"dotnet list \"{project.Path}\" package --framework net4.8 --include-transitive --format json",
+          workingDirectory,
+          cancellationToken);
+      var netFrameworkPackages = netFrameworkResult.Succeeded
+          ? ParsePackageReferences(project.Name, netFrameworkResult.Output)
+          : [];
+
+      if (netFrameworkPackages.Count > 0)
+      {
+        result = netFrameworkResult;
+        packages = netFrameworkPackages;
+      }
+    }
 
     if (!result.Succeeded)
     {
       throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
     }
 
-    var packages = ParsePackageReferences(project.Name, result.Output);
+    if (packages.Count == 0)
+    {
+      return [];
+    }
+
     var updates = new List<PackageUpdate>();
 
     foreach (var package in packages)
     {
-      var latestVersion = await ResolveLatestVersionAsync(package.PackageName, package.CurrentVersion, sources, cancellationToken);
-      if (string.IsNullOrWhiteSpace(latestVersion))
+      var availableVersions = await ResolveAvailableVersionsAsync(package.PackageName, sources, cancellationToken);
+      if (availableVersions.Count == 0)
       {
         continue;
       }
+
+      var newerVersions = availableVersions
+          .Where(version => VersionStringComparer.Instance.Compare(version, package.CurrentVersion) > 0)
+          .ToList();
+      var latestVersion = newerVersions.FirstOrDefault() ?? package.CurrentVersion;
 
       var update = new PackageUpdate
       {
@@ -42,8 +72,12 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
         IsSelected = VersionStringComparer.Instance.Compare(latestVersion, package.CurrentVersion) > 0
       };
 
-      update.AvailableVersions.Add(latestVersion);
-      if (!VersionsAreEqual(package.CurrentVersion, latestVersion))
+      foreach (var version in newerVersions)
+      {
+        update.AvailableVersions.Add(version);
+      }
+
+      if (!update.AvailableVersions.Any(version => VersionsAreEqual(version, package.CurrentVersion)))
       {
         update.AvailableVersions.Add(package.CurrentVersion);
       }
@@ -111,7 +145,7 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
       var currentVersion = GetString(package, "resolvedVersion");
       var requestedVersion = GetString(package, "requestedVersion");
       var packageName = GetString(package, "id");
-      var packageVersion = string.IsNullOrWhiteSpace(requestedVersion) ? currentVersion : requestedVersion;
+      var packageVersion = string.IsNullOrWhiteSpace(currentVersion) ? requestedVersion : currentVersion;
 
       if (string.IsNullOrWhiteSpace(packageName) ||
           string.IsNullOrWhiteSpace(packageVersion))
@@ -141,11 +175,11 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
         .Select(source => $"{argumentName} \"{source.Trim()}\""));
   }
 
-  private static async Task<string?> ResolveLatestVersionAsync(string packageName, string currentVersion, IReadOnlyCollection<string> sources, CancellationToken cancellationToken)
+  private static async Task<IReadOnlyList<string>> ResolveAvailableVersionsAsync(string packageName, IReadOnlyCollection<string> sources, CancellationToken cancellationToken)
   {
     if (sources.Count == 0)
     {
-      return null;
+      return [];
     }
 
     var versions = new List<string>();
@@ -162,11 +196,10 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
 
     if (releaseVersions.Count == 0)
     {
-      return null;
+      return [];
     }
 
-    return releaseVersions.FirstOrDefault(version => VersionStringComparer.Instance.Compare(version, currentVersion) >= 0)
-        ?? currentVersion;
+    return releaseVersions;
   }
 
   private static async Task<IReadOnlyList<string>> ReadVersionsFromSourceAsync(string source, string packageName, CancellationToken cancellationToken)
@@ -192,19 +225,47 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
     try
     {
       var requestUri = $"{source.TrimEnd('/')}/FindPackagesById()?id='{Uri.EscapeDataString(packageName)}'";
-      using var stream = await HttpClient.GetStreamAsync(requestUri, cancellationToken);
-      var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellationToken);
-      return document
-          .Descendants()
-          .Where(element => element.Name.LocalName.Equals("Version", StringComparison.OrdinalIgnoreCase))
-          .Select(element => element.Value)
-          .Where(version => !string.IsNullOrWhiteSpace(version))
-          .ToList();
+      var visitedUris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      var versions = new List<string>();
+
+      while (!string.IsNullOrWhiteSpace(requestUri) && visitedUris.Add(requestUri))
+      {
+        using var stream = await HttpClient.GetStreamAsync(requestUri, cancellationToken);
+        var document = await XDocument.LoadAsync(stream, LoadOptions.None, cancellationToken);
+        versions.AddRange(document
+            .Descendants()
+            .Where(element => element.Name.LocalName.Equals("Version", StringComparison.OrdinalIgnoreCase))
+            .Select(element => element.Value)
+            .Where(version => !string.IsNullOrWhiteSpace(version)));
+
+        var nextUri = document
+            .Descendants()
+            .Where(element => element.Name.LocalName.Equals("link", StringComparison.OrdinalIgnoreCase))
+            .Where(element => string.Equals((string?)element.Attribute("rel"), "next", StringComparison.OrdinalIgnoreCase))
+            .Select(element => (string?)element.Attribute("href"))
+            .FirstOrDefault(uri => !string.IsNullOrWhiteSpace(uri));
+
+        requestUri = ResolveNextPageUri(requestUri, nextUri);
+      }
+
+      return versions;
     }
     catch
     {
       return [];
     }
+  }
+
+  private static string? ResolveNextPageUri(string currentUri, string? nextUri)
+  {
+    if (string.IsNullOrWhiteSpace(nextUri))
+    {
+      return null;
+    }
+
+    return Uri.TryCreate(nextUri, UriKind.Absolute, out var absoluteUri)
+        ? absoluteUri.ToString()
+        : new Uri(new Uri(currentUri), nextUri).ToString();
   }
 
   private static async Task<IReadOnlyList<string>> ReadVersionsFromV3SourceAsync(string source, string packageName, CancellationToken cancellationToken)

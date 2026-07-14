@@ -157,15 +157,12 @@
                                     <DataGridTemplateColumn Header="Target" Width="140">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <TextBlock Text="{Binding TargetVersion}" />
+                                                <ComboBox ItemsSource="{Binding AvailableVersions}"
+                                                          SelectedItem="{Binding TargetVersion, UpdateSourceTrigger=PropertyChanged}"
+                                                          IsEnabled="{Binding CanApply}"
+                                                          MinWidth="118" />
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
-                                        <DataGridTemplateColumn.CellEditingTemplate>
-                                            <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding AvailableVersions}"
-                                                          SelectedItem="{Binding TargetVersion, UpdateSourceTrigger=PropertyChanged}" />
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellEditingTemplate>
                                     </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>

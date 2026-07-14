@@ -12,8 +12,9 @@ Project Manager — настольное WPF-приложение для Windows
 
 - открытие Visual Studio-решений (`.sln`) и автоматический поиск входящих в них C#-проектов (`.csproj`);
 - отображение текущей версии каждого проекта и общей версии решения (`Mixed`, если версии различаются);
-- проверка верхнеуровневых NuGet-зависимостей для `net4.8`;
+- проверка верхнеуровневых NuGet-зависимостей с автоматическим определением целевых фреймворков каждого проекта;
 - поиск актуальных стабильных версий пакетов в настроенных NuGet V2/V3-источниках;
+- выбор любой стабильной целевой версии между установленной и новейшей доступной;
 - выбор обновлений отдельно, выбор всех доступных обновлений или очистка выбора;
 - применение выбранных версий через `dotnet add package`;
 - единая запись `Version`, `FileVersion` и `AssemblyVersion` во все проекты решения;
@@ -32,7 +33,7 @@ Project Manager — настольное WPF-приложение для Windows
 - Git, доступный через `PATH`;
 - доступ к используемым NuGet-источникам и Git-репозиторию.
 
-Проверка пакетов сейчас выполняется для целевого фреймворка `net4.8`, поэтому загружаемое решение должно содержать соответствующую конфигурацию.
+В одном solution могут одновременно находиться проекты для .NET Framework, .NET 8 и проекты с несколькими целевыми фреймворками. Для каждого `.csproj` приложение использует фреймворки, возвращённые `dotnet`.
 
 ## Сборка и запуск
 
@@ -53,7 +54,7 @@ dotnet run --project ProjectManager.App\ProjectManager.App.csproj
    - укажите полный путь к `MSBuild.exe`;
    - добавьте адреса NuGet V2/V3 feeds и сохраните настройки.
 3. Нажмите **Check updates**. Для выбранного в дереве проекта появится таблица пакетов с текущей и последней стабильной версией.
-4. Отметьте нужные строки или нажмите **Use all**, затем **Apply versions**.
+4. В колонке **Target** выберите для каждого пакета новейшую или одну из промежуточных стабильных версий. Отметьте нужные строки или нажмите **Use all**, затем **Apply versions**.
 5. При необходимости задайте общую версию и нажмите **Set version**.
 6. Нажмите **Build**, чтобы выполнить Restore и Release-сборку через MSBuild.
 7. Укажите сообщение и нажмите **Commit**. Приложение выполнит добавление всех изменений, коммит и `git push`.
@@ -81,12 +82,12 @@ C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\M
 
 Для каждого проекта приложение:
 
-1. получает список зависимостей командой `dotnet list <project> package --framework net4.8 --include-transitive --format json`;
+1. получает список зависимостей и всех целевых фреймворков командой `dotnet list <project> package --include-transitive --format json`;
 2. обрабатывает верхнеуровневые зависимости из результата;
 3. запрашивает доступные версии напрямую у настроенных V2/V3 NuGet-источников;
 4. исключает prerelease-версии (версии с суффиксом через `-`, включая `alpha`);
-5. предлагает новейшую найденную стабильную версию;
-6. применяет выбор командой `dotnet add <project> package <name> --version <version>`.
+5. предлагает новейшую найденную стабильную версию и добавляет все более новые стабильные версии в список **Target**;
+6. применяет выбранную целевую версию командой `dotnet add <project> package <name> --version <version>`.
 
 Если NuGet-источники не настроены или недоступны, приложение не сможет определить новые версии. Адреса приватных feeds должны быть доступны без дополнительной интерактивной авторизации либо уже настроены в окружении.
 
@@ -126,7 +127,7 @@ ProjectManager.sln
 ## Текущие ограничения
 
 - поддерживаются только C#-проекты `.csproj`, напрямую перечисленные в классическом `.sln`;
-- проверка зависимостей жестко привязана к `net4.8`;
+- пакеты с разными версиями в разных целевых фреймворках одного проекта сейчас объединяются по имени пакета;
 - обновляются только верхнеуровневые `PackageReference`, даже если команда получения списка включает транзитивные зависимости;
 - prerelease-версии не предлагаются;
 - Git-команды применяются ко всем изменениям в рабочем дереве (`git add -A`);
@@ -155,8 +156,9 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 
 - opens Visual Studio solutions (`.sln`) and automatically discovers their C# projects (`.csproj`);
 - displays the current version of every project and the common solution version (`Mixed` when versions differ);
-- checks top-level NuGet dependencies targeting `net4.8`;
+- checks top-level NuGet dependencies while automatically detecting each project's target frameworks;
 - finds the latest stable package versions in configured NuGet V2/V3 sources;
+- allows any stable target version between the installed and latest available version to be selected;
 - supports selecting individual updates, selecting all available updates, and clearing the selection;
 - applies selected versions through `dotnet add package`;
 - writes the same `Version`, `FileVersion`, and `AssemblyVersion` to every project in the solution;
@@ -175,7 +177,7 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 - Git available through `PATH`;
 - access to the required NuGet sources and Git repository.
 
-Package inspection currently targets `net4.8`, so the loaded solution must contain a compatible target framework configuration.
+A single solution may contain .NET Framework projects, .NET 8 projects, and projects targeting multiple frameworks. For every `.csproj`, the application uses the frameworks returned by `dotnet`.
 
 ### Build and run
 
@@ -196,7 +198,7 @@ The Release build is written to `ProjectManager.App\bin\Release\net8.0-windows`.
    - enter the full path to `MSBuild.exe`;
    - add the required NuGet V2/V3 feed URLs and save the settings.
 3. Select **Check updates**. The table for the selected project displays each package with its current and latest stable version.
-4. Select individual rows or choose **Use all**, then select **Apply versions**.
+4. In the **Target** column, choose the latest or any intermediate stable version for each package. Select individual rows or choose **Use all**, then select **Apply versions**.
 5. If required, enter a common solution version and select **Set version**.
 6. Select **Build** to restore packages and build the solution in Release mode through MSBuild.
 7. Enter a commit message and select **Commit**. The application stages all changes, creates a commit, and runs `git push`.
@@ -224,12 +226,12 @@ If a different Visual Studio edition or Build Tools is installed, update this pa
 
 For every project, the application:
 
-1. retrieves its dependency list with `dotnet list <project> package --framework net4.8 --include-transitive --format json`;
+1. retrieves its dependency list and all target frameworks with `dotnet list <project> package --include-transitive --format json`;
 2. processes the top-level dependencies returned by that command;
 3. requests available versions directly from the configured NuGet V2/V3 sources;
 4. excludes prerelease versions, including any version containing a `-` suffix or `alpha`;
-5. proposes the latest stable version found;
-6. applies the selection with `dotnet add <project> package <name> --version <version>`.
+5. proposes the latest stable version and adds every newer stable version to the **Target** list;
+6. applies the selected target with `dotnet add <project> package <name> --version <version>`.
 
 The application cannot determine new versions when no NuGet sources are configured or when the configured sources are unavailable. Private feeds must either be accessible without interactive authentication or already be authenticated in the environment.
 
@@ -269,7 +271,7 @@ The application is built with .NET 8, WPF, and the MVVM pattern without third-pa
 ### Current limitations
 
 - only C# `.csproj` files directly listed in a traditional `.sln` file are supported;
-- dependency inspection is hard-coded to `net4.8`;
+- packages using different versions across target frameworks in the same project are currently grouped by package name;
 - only top-level `PackageReference` dependencies are updated, even though the listing command includes transitive dependencies;
 - prerelease versions are not offered;
 - Git operations stage every working-tree change with `git add -A`;
