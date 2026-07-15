@@ -14,8 +14,9 @@ Project Manager — настольное WPF-приложение для Windows
 - отображение текущей версии каждого проекта и общей версии решения (`Mixed`, если версии различаются);
 - проверка верхнеуровневых NuGet-зависимостей с автоматическим определением целевых фреймворков каждого проекта;
 - поиск актуальных стабильных версий пакетов в настроенных NuGet V2/V3-источниках;
-- выбор любой стабильной целевой версии между установленной и новейшей доступной;
+- выбор любой доступной стабильной версии пакета, включая промежуточные и более старые версии;
 - отдельный выбор целевой версии для каждого уникального NuGet-пакета и её установка во всех проектах solution, которые используют этот пакет;
+- групповое назначение версии пакетам по префиксу, части имени или точному имени;
 - выбор обновлений отдельно, выбор всех доступных обновлений или очистка выбора;
 - применение выбранных версий через `dotnet add package`;
 - единая запись `Version`, `FileVersion` и `AssemblyVersion` во все проекты решения;
@@ -23,6 +24,7 @@ Project Manager — настольное WPF-приложение для Windows
 - выполнение `git add`, создание коммита и отправка текущей ветки;
 - создание Git-тега по настраиваемому шаблону, например `v_{version}`, и отправка тега в `origin`;
 - журнал этапов с выводом команд, кодами завершения и сообщениями об ошибках;
+- цветные статусы `Pending`, `Working`, `Completed` и `Failed` рядом с проектами во время проверки и применения версий;
 - сохранение пути к MSBuild и списка NuGet-источников между запусками.
 
 ## Требования
@@ -57,7 +59,7 @@ dotnet run --project ProjectManager.App\ProjectManager.App.csproj
    - укажите полный путь к `MSBuild.exe`;
    - добавьте адреса NuGet V2/V3 feeds и сохраните настройки.
 3. Нажмите **Check updates**. Для выбранного в дереве проекта появится таблица пакетов с текущей и последней стабильной версией.
-4. Откройте **Package targets...**. В solution-wide таблице каждый пакет отображается один раз вместе с количеством проектов, текущими версиями и собственным списком **Target**. Выберите целевую версию каждого пакета и нажмите **Apply targets**.
+4. Откройте **Package targets...**. В верхнем блоке можно найти группу пакетов по `Prefix`, `Contains` или `Exact name`; основная таблица фильтруется сразу при вводе pattern. Выберите общую доступную версию и нажмите **Set group target**. Проверьте цели и нажмите **Apply targets**.
 5. При необходимости скорректируйте отдельные строки в основной таблице, отметьте нужные обновления или нажмите **Use all**, затем **Apply versions**.
 6. При необходимости задайте общую версию проектов и нажмите **Set version**.
 7. Нажмите **Build**, чтобы выполнить Restore и Release-сборку через MSBuild.
@@ -90,11 +92,13 @@ C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\M
 2. обрабатывает верхнеуровневые зависимости из результата;
 3. запрашивает доступные версии напрямую у настроенных V2/V3 NuGet-источников;
 4. исключает prerelease-версии (версии с суффиксом через `-`, включая `alpha`);
-5. сравнивает версии по числовым компонентам, а при различном количестве компонентов — как единое число без точек (например, `231.1.2.37` считается новее `231.1.17`);
-6. предлагает новейшую найденную стабильную версию и добавляет все более новые стабильные версии в список **Target**;
+5. сравнивает первые два числовых компонента по отдельности, а оставшуюся часть версий разной длины — как единое число без точек (поэтому `2310.0.4.12` новее `221.10105.1`, а `231.1.2.37` новее `231.1.17`);
+6. предлагает новейшую найденную стабильную версию по умолчанию и добавляет всю доступную стабильную историю, включая старые версии, в список **Target**;
 7. применяет выбранную целевую версию командой `dotnet add <project> package <name> --version <version>`.
 
 Если NuGet-источники не настроены или недоступны, приложение не сможет определить новые версии. Адреса приватных feeds должны быть доступны без дополнительной интерактивной авторизации либо уже настроены в окружении.
+
+Выбор версии ниже текущей выполняет downgrade. Он поддерживается как для отдельной строки проекта, так и через **Package targets...** для всех проектов, использующих выбранный пакет. Совместимость старой версии проверяется последующим restore/build; автоматического анализа совместимости до применения нет.
 
 ## Git-операции
 
@@ -164,8 +168,9 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 - displays the current version of every project and the common solution version (`Mixed` when versions differ);
 - checks top-level NuGet dependencies while automatically detecting each project's target frameworks;
 - finds the latest stable package versions in configured NuGet V2/V3 sources;
-- allows any stable target version between the installed and latest available version to be selected;
+- allows any available stable package version to be selected, including intermediate and older versions;
 - selects a separate target version for every unique NuGet package and applies it across all projects that reference that package;
+- assigns a shared target version to package groups matched by prefix, partial name, or exact name;
 - supports selecting individual updates, selecting all available updates, and clearing the selection;
 - applies selected versions through `dotnet add package`;
 - writes the same `Version`, `FileVersion`, and `AssemblyVersion` to every project in the solution;
@@ -173,6 +178,7 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 - stages all changes, creates a Git commit, and pushes the current branch;
 - creates a Git tag from a configurable pattern such as `v_{version}` and pushes it to `origin`;
 - provides a workflow log containing command output, exit codes, and error messages;
+- shows color-coded `Pending`, `Working`, `Completed`, and `Failed` badges beside projects while checking or applying versions;
 - persists the MSBuild path and NuGet source list between application sessions.
 
 ### Requirements
@@ -207,7 +213,7 @@ The Release build is written to `ProjectManager.App\bin\Release\net8.0-windows`.
    - enter the full path to `MSBuild.exe`;
    - add the required NuGet V2/V3 feed URLs and save the settings.
 3. Select **Check updates**. The table for the selected project displays each package with its current and latest stable version.
-4. Open **Package targets...**. The solution-wide table shows every package once, together with its project count, current versions, and individual **Target** list. Choose each package target and select **Apply targets**.
+4. Open **Package targets...**. In the upper section, match a package group by `Prefix`, `Contains`, or `Exact name`; the main table filters immediately as the pattern is entered. Choose a version common to every match and select **Set group target**, then review the targets and select **Apply targets**.
 5. If necessary, adjust individual rows in the main table. Select the required updates or choose **Use all**, then select **Apply versions**.
 6. If required, enter a common project version and select **Set version**.
 7. Select **Build** to restore packages and build the solution in Release mode through MSBuild.
@@ -240,11 +246,13 @@ For every project, the application:
 2. processes the top-level dependencies returned by that command;
 3. requests available versions directly from the configured NuGet V2/V3 sources;
 4. excludes prerelease versions, including any version containing a `-` suffix or `alpha`;
-5. compares versions component by component, but treats versions with different component counts as one number without dots (for example, `231.1.2.37` is considered newer than `231.1.17`);
-6. proposes the latest stable version and adds every newer stable version to the **Target** list;
+5. compares the first two numeric components independently and, for differently sized versions, treats the remaining components as one number without dots (therefore `2310.0.4.12` is newer than `221.10105.1`, while `231.1.2.37` is newer than `231.1.17`);
+6. proposes the latest stable version by default and adds the complete available stable history, including older versions, to the **Target** list;
 7. applies the selected target with `dotnet add <project> package <name> --version <version>`.
 
 The application cannot determine new versions when no NuGet sources are configured or when the configured sources are unavailable. Private feeds must either be accessible without interactive authentication or already be authenticated in the environment.
+
+Selecting a version below the installed version performs a downgrade. Downgrades are supported for an individual project row and through **Package targets...** for every project referencing the selected package. Compatibility is validated by the subsequent restore/build; the application does not analyze compatibility before applying the version.
 
 ### Git operations
 

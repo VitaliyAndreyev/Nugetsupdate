@@ -7,6 +7,7 @@ namespace ProjectManager.App.Models;
 public sealed class ProjectNode : INotifyPropertyChanged
 {
     private string _projectVersion = string.Empty;
+    private string _workflowStatus = string.Empty;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -28,6 +29,21 @@ public sealed class ProjectNode : INotifyPropertyChanged
             _projectVersion = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProjectVersion)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+        }
+    }
+
+    public string WorkflowStatus
+    {
+        get => _workflowStatus;
+        set
+        {
+            if (_workflowStatus == value)
+            {
+                return;
+            }
+
+            _workflowStatus = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(WorkflowStatus)));
         }
     }
 

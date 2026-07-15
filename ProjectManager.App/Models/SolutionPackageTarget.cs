@@ -20,7 +20,13 @@ public sealed class SolutionPackageTarget : INotifyPropertyChanged
   public string TargetVersion
   {
     get => _targetVersion;
-    set => SetField(ref _targetVersion, value);
+    set
+    {
+      if (SetField(ref _targetVersion, value))
+      {
+        IsSelected = !string.IsNullOrWhiteSpace(value);
+      }
+    }
   }
 
   public bool IsSelected
@@ -29,14 +35,15 @@ public sealed class SolutionPackageTarget : INotifyPropertyChanged
     set => SetField(ref _isSelected, value);
   }
 
-  private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+  private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
   {
     if (EqualityComparer<T>.Default.Equals(field, value))
     {
-      return;
+      return false;
     }
 
     field = value;
     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    return true;
   }
 }

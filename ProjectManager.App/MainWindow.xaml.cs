@@ -40,11 +40,4 @@ public partial class MainWindow : Window
     }
   }
 
-  private void ProjectTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-  {
-    if (DataContext is MainViewModel viewModel && e.NewValue is Models.ProjectNode project)
-    {
-      viewModel.SelectedProject = project;
-    }
-  }
 }

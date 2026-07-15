@@ -32,9 +32,20 @@ public sealed class PackageVersionComparer : IComparer<string>
       return 0;
     }
 
+    var stablePrefixLength = Math.Min(2, Math.Min(leftParts.Length, rightParts.Length));
+    for (var index = 0; index < stablePrefixLength; index++)
+    {
+      var prefixComparison = leftParts[index].CompareTo(rightParts[index]);
+      if (prefixComparison != 0)
+      {
+        return prefixComparison;
+      }
+    }
+
     if (leftParts.Length != rightParts.Length)
     {
-      var compactComparison = ToCompactNumber(leftParts).CompareTo(ToCompactNumber(rightParts));
+      var compactComparison = ToCompactNumber(leftParts.Skip(stablePrefixLength))
+          .CompareTo(ToCompactNumber(rightParts.Skip(stablePrefixLength)));
       if (compactComparison != 0)
       {
         return compactComparison;
@@ -42,7 +53,7 @@ public sealed class PackageVersionComparer : IComparer<string>
     }
 
     var partCount = Math.Max(leftParts.Length, rightParts.Length);
-    for (var index = 0; index < partCount; index++)
+    for (var index = stablePrefixLength; index < partCount; index++)
     {
       var leftPart = index < leftParts.Length ? leftParts[index] : 0;
       var rightPart = index < rightParts.Length ? rightParts[index] : 0;

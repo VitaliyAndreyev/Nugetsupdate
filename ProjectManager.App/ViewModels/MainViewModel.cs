@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Windows.Data;
 
 namespace ProjectManager.App.ViewModels;
 
@@ -26,10 +27,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
   private string _msBuildPath = string.Empty;
   private string _status = "Select a solution to begin.";
   private string _workflowLog = string.Empty;
+  private string _packageGroupMatchMode = "Prefix";
+  private string _packageGroupPattern = string.Empty;
+  private string _packageGroupTargetVersion = string.Empty;
+  private string _packageGroupMatchSummary = "Enter a package prefix or name.";
   private bool _isBusy;
 
   public MainViewModel()
   {
+    SolutionPackageTargetsView = CollectionViewSource.GetDefaultView(SolutionPackageTargets);
+    SolutionPackageTargetsView.Filter = FilterSolutionPackageTarget;
     _nugetUpdateService = new NuGetUpdateService(_commandRunner);
     _releaseWorkflowService = new ReleaseWorkflowService(_commandRunner);
     BrowseSolutionCommand = new RelayCommand(BrowseSolution);
@@ -42,6 +49,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     ApplyPackageTargetsCommand = new RelayCommand(ApplyPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
     SelectLatestPackageTargetsCommand = new RelayCommand(SelectLatestPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
     ClearPackageTargetsCommand = new RelayCommand(ClearPackageTargets, () => SolutionPackageTargets.Count > 0 && !IsBusy);
+    ApplyPackageGroupTargetCommand = new RelayCommand(ApplyPackageGroupTarget, () => PackageGroupAvailableVersions.Count > 0 && !string.IsNullOrWhiteSpace(PackageGroupTargetVersion) && !IsBusy);
     CheckUpdatesCommand = new AsyncRelayCommand(CheckUpdatesAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
     ApplyUpdatesCommand = new AsyncRelayCommand(ApplyUpdatesAsync, () => Projects.SelectMany(project => project.PackageUpdates).Any(update => update.IsSelected && update.CanApply) && !IsBusy);
     BuildCommand = new AsyncRelayCommand(BuildAsync, () => !string.IsNullOrWhiteSpace(SolutionPath) && !IsBusy);
@@ -62,6 +70,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
   public ObservableCollection<ProjectNode> ProjectTree { get; } = [];
   public ObservableCollection<PackageUpdate> PackageUpdates { get; } = [];
   public ObservableCollection<SolutionPackageTarget> SolutionPackageTargets { get; } = [];
+  public ICollectionView SolutionPackageTargetsView { get; }
+  public ObservableCollection<string> PackageGroupMatchModes { get; } = ["Prefix", "Contains", "Exact name"];
+  public ObservableCollection<string> PackageGroupAvailableVersions { get; } = [];
   public ObservableCollection<NuGetSourceSetting> NuGetSources { get; } = [];
 
   public RelayCommand BrowseSolutionCommand { get; }
@@ -74,6 +85,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
   public RelayCommand ApplyPackageTargetsCommand { get; }
   public RelayCommand SelectLatestPackageTargetsCommand { get; }
   public RelayCommand ClearPackageTargetsCommand { get; }
+  public RelayCommand ApplyPackageGroupTargetCommand { get; }
   public AsyncRelayCommand CheckUpdatesCommand { get; }
   public AsyncRelayCommand ApplyUpdatesCommand { get; }
   public AsyncRelayCommand BuildCommand { get; }
@@ -84,6 +96,48 @@ public sealed class MainViewModel : INotifyPropertyChanged
   {
     get => _solutionPath;
     private set => SetField(ref _solutionPath, value);
+  }
+
+  public string PackageGroupMatchMode
+  {
+    get => _packageGroupMatchMode;
+    set
+    {
+      if (SetField(ref _packageGroupMatchMode, value))
+      {
+        RefreshPackageGroupSelection();
+      }
+    }
+  }
+
+  public string PackageGroupPattern
+  {
+    get => _packageGroupPattern;
+    set
+    {
+      if (SetField(ref _packageGroupPattern, value))
+      {
+        RefreshPackageGroupSelection();
+      }
+    }
+  }
+
+  public string PackageGroupTargetVersion
+  {
+    get => _packageGroupTargetVersion;
+    set
+    {
+      if (SetField(ref _packageGroupTargetVersion, value))
+      {
+        ApplyPackageGroupTargetCommand.RaiseCanExecuteChanged();
+      }
+    }
+  }
+
+  public string PackageGroupMatchSummary
+  {
+    get => _packageGroupMatchSummary;
+    private set => SetField(ref _packageGroupMatchSummary, value);
   }
 
   public string NewVersion
@@ -201,6 +255,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     ProjectTree.Clear();
     PackageUpdates.Clear();
     SolutionPackageTargets.Clear();
+    PackageGroupAvailableVersions.Clear();
+    PackageGroupPattern = string.Empty;
+    PackageGroupTargetVersion = string.Empty;
+    PackageGroupMatchSummary = "Enter a package prefix or name.";
 
     foreach (var project in _solutionAnalyzer.LoadProjects(solutionPath))
     {
@@ -250,6 +308,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
       foreach (var project in Projects)
       {
+        project.WorkflowStatus = "Pending";
+      }
+      await Task.Yield();
+
+      foreach (var project in Projects)
+      {
+        project.WorkflowStatus = "Working";
+        await Task.Yield();
+
+        foreach (var existingUpdate in project.PackageUpdates)
+        {
+          existingUpdate.PropertyChanged -= PackageUpdate_PropertyChanged;
+        }
+
         project.PackageUpdates.Clear();
         try
         {
@@ -257,6 +329,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
           var updates = await _nugetUpdateService.CheckUpdatesAsync(project, sources);
           foreach (var update in updates)
           {
+            update.PropertyChanged += PackageUpdate_PropertyChanged;
             project.PackageUpdates.Add(update);
           }
 
@@ -266,9 +339,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
           {
             log.AppendLine($"  - {update.PackageName}: {update.CurrentVersion} -> {update.LatestVersion}");
           }
+
+          project.WorkflowStatus = "Completed";
         }
         catch (Exception exception)
         {
+          project.WorkflowStatus = "Failed";
           log.AppendLine($"{project.Name}: check failed");
           log.AppendLine($"  {exception.Message}");
         }
@@ -291,20 +367,42 @@ public sealed class MainViewModel : INotifyPropertyChanged
       var sources = ActiveNuGetSources();
       var log = new StringBuilder();
       var appliedCount = 0;
+      var projectsToUpdate = Projects
+          .Where(project => project.PackageUpdates.Any(update => update.IsSelected && update.CanApply))
+          .ToList();
 
       foreach (var project in Projects)
       {
-        foreach (var update in project.PackageUpdates.Where(update => update.IsSelected && update.CanApply))
+        project.WorkflowStatus = projectsToUpdate.Contains(project) ? "Pending" : string.Empty;
+      }
+      await Task.Yield();
+
+      foreach (var project in projectsToUpdate)
+      {
+        project.WorkflowStatus = "Working";
+        await Task.Yield();
+
+        try
         {
-          log.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion}");
-          var result = await _nugetUpdateService.ApplyUpdateAsync(project, update, sources);
-          if (!result.Succeeded)
+          foreach (var update in project.PackageUpdates.Where(update => update.IsSelected && update.CanApply))
           {
-            AppendLog("Apply versions failed", $"{project.Name}: {update.PackageName} -> {update.TargetVersion}{Environment.NewLine}{FormatProcessResult(result)}");
-            throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
+            log.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion}");
+            var result = await _nugetUpdateService.ApplyUpdateAsync(project, update, sources);
+            if (!result.Succeeded)
+            {
+              AppendLog("Apply versions failed", $"{project.Name}: {update.PackageName} -> {update.TargetVersion}{Environment.NewLine}{FormatProcessResult(result)}");
+              throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
+            }
+
+            appliedCount++;
           }
 
-          appliedCount++;
+          project.WorkflowStatus = "Completed";
+        }
+        catch
+        {
+          project.WorkflowStatus = "Failed";
+          throw;
         }
       }
 
@@ -509,6 +607,93 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
   }
 
+  private void ApplyPackageGroupTarget()
+  {
+    var matchingTargets = MatchingPackageGroupTargets();
+    var appliedCount = 0;
+    foreach (var packageTarget in matchingTargets)
+    {
+      var matchingVersion = packageTarget.AvailableVersions
+          .FirstOrDefault(version => string.Equals(version, PackageGroupTargetVersion, StringComparison.OrdinalIgnoreCase));
+      if (matchingVersion is null)
+      {
+        continue;
+      }
+
+      packageTarget.TargetVersion = matchingVersion;
+      packageTarget.IsSelected = true;
+      appliedCount++;
+    }
+
+    AppendLog(
+        "Package group target set",
+        $"Match: {PackageGroupMatchMode} '{PackageGroupPattern.Trim()}'{Environment.NewLine}" +
+        $"Target version: {PackageGroupTargetVersion}{Environment.NewLine}" +
+        $"Packages updated in target table: {appliedCount}");
+  }
+
+  private void RefreshPackageGroupSelection()
+  {
+    SolutionPackageTargetsView.Refresh();
+    var previousTarget = PackageGroupTargetVersion;
+    PackageGroupAvailableVersions.Clear();
+
+    var matchingTargets = MatchingPackageGroupTargets();
+    if (matchingTargets.Count == 0)
+    {
+      PackageGroupMatchSummary = string.IsNullOrWhiteSpace(PackageGroupPattern)
+          ? "Enter a package prefix or name."
+          : "No matching packages.";
+      PackageGroupTargetVersion = string.Empty;
+      ApplyPackageGroupTargetCommand.RaiseCanExecuteChanged();
+      return;
+    }
+
+    var commonVersions = matchingTargets[0].AvailableVersions
+        .Where(version => matchingTargets.All(target => target.AvailableVersions.Any(candidate => string.Equals(candidate, version, StringComparison.OrdinalIgnoreCase))))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderByDescending(version => version, PackageVersionComparer.Instance);
+    foreach (var version in commonVersions)
+    {
+      PackageGroupAvailableVersions.Add(version);
+    }
+
+    PackageGroupTargetVersion = PackageGroupAvailableVersions
+        .FirstOrDefault(version => string.Equals(version, previousTarget, StringComparison.OrdinalIgnoreCase))
+        ?? PackageGroupAvailableVersions.FirstOrDefault()
+        ?? string.Empty;
+    PackageGroupMatchSummary = $"{matchingTargets.Count} matching package(s), {PackageGroupAvailableVersions.Count} common version(s).";
+    ApplyPackageGroupTargetCommand.RaiseCanExecuteChanged();
+  }
+
+  private List<SolutionPackageTarget> MatchingPackageGroupTargets()
+  {
+    var pattern = PackageGroupPattern.Trim();
+    if (string.IsNullOrWhiteSpace(pattern))
+    {
+      return [];
+    }
+
+    return SolutionPackageTargets
+        .Where(MatchesPackageGroup)
+        .ToList();
+  }
+
+  private bool FilterSolutionPackageTarget(object item)
+      => item is SolutionPackageTarget target &&
+         (string.IsNullOrWhiteSpace(PackageGroupPattern) || MatchesPackageGroup(target));
+
+  private bool MatchesPackageGroup(SolutionPackageTarget target)
+  {
+    var pattern = PackageGroupPattern.Trim();
+    return PackageGroupMatchMode switch
+    {
+      "Exact name" => string.Equals(target.PackageName, pattern, StringComparison.OrdinalIgnoreCase),
+      "Contains" => target.PackageName.Contains(pattern, StringComparison.OrdinalIgnoreCase),
+      _ => target.PackageName.StartsWith(pattern, StringComparison.OrdinalIgnoreCase)
+    };
+  }
+
   private void RefreshProjectTree()
   {
     RefreshPackageGrid();
@@ -556,13 +741,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
           .OrderByDescending(version => version, PackageVersionComparer.Instance)
           .ToList();
 
+      var shouldSelect = commonVersions.Count > 0 && updates.Any(update => update.IsSelected);
       var target = new SolutionPackageTarget
       {
         PackageName = packageGroup.Key,
         ProjectCount = projectNames.Count,
         ProjectNames = string.Join(Environment.NewLine, projectNames),
-        CurrentVersions = currentVersions.Count == 1 ? currentVersions[0] : $"Mixed: {string.Join(", ", currentVersions)}",
-        IsSelected = commonVersions.Count > 0 && updates.Any(update => update.IsSelected)
+        CurrentVersions = currentVersions.Count == 1 ? currentVersions[0] : $"Mixed: {string.Join(", ", currentVersions)}"
       };
 
       foreach (var version in commonVersions)
@@ -571,8 +756,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
       }
 
       target.TargetVersion = commonVersions.FirstOrDefault() ?? string.Empty;
+      target.IsSelected = shouldSelect;
       SolutionPackageTargets.Add(target);
     }
+
+    RefreshPackageGroupSelection();
   }
 
   private void RaiseCommandStates()
@@ -583,11 +771,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     ApplyPackageTargetsCommand.RaiseCanExecuteChanged();
     SelectLatestPackageTargetsCommand.RaiseCanExecuteChanged();
     ClearPackageTargetsCommand.RaiseCanExecuteChanged();
+    ApplyPackageGroupTargetCommand.RaiseCanExecuteChanged();
     CheckUpdatesCommand.RaiseCanExecuteChanged();
     ApplyUpdatesCommand.RaiseCanExecuteChanged();
     BuildCommand.RaiseCanExecuteChanged();
     CommitCommand.RaiseCanExecuteChanged();
     CreateTagCommand.RaiseCanExecuteChanged();
+  }
+
+  private void PackageUpdate_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    if (e.PropertyName is nameof(PackageUpdate.IsSelected) or nameof(PackageUpdate.TargetVersion) or nameof(PackageUpdate.CanApply))
+    {
+      ApplyUpdatesCommand.RaiseCanExecuteChanged();
+    }
   }
 
   private void SaveNuGetSources()

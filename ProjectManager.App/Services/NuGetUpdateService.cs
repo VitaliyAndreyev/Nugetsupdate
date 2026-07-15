@@ -57,10 +57,16 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
         continue;
       }
 
-      var newerVersions = availableVersions
-          .Where(version => PackageVersionComparer.Instance.Compare(version, package.CurrentVersion) > 0)
+      var selectableVersions = availableVersions
+          .Append(package.CurrentVersion)
+          .Distinct(StringComparer.OrdinalIgnoreCase)
+          .OrderByDescending(version => version, PackageVersionComparer.Instance)
           .ToList();
-      var latestVersion = newerVersions.FirstOrDefault() ?? package.CurrentVersion;
+      var latestAvailableVersion = availableVersions.FirstOrDefault();
+      var latestVersion = latestAvailableVersion is not null &&
+                          PackageVersionComparer.Instance.Compare(latestAvailableVersion, package.CurrentVersion) > 0
+          ? latestAvailableVersion
+          : package.CurrentVersion;
 
       var update = new PackageUpdate
       {
@@ -72,14 +78,9 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
         IsSelected = PackageVersionComparer.Instance.Compare(latestVersion, package.CurrentVersion) > 0
       };
 
-      foreach (var version in newerVersions)
+      foreach (var version in selectableVersions)
       {
         update.AvailableVersions.Add(version);
-      }
-
-      if (!update.AvailableVersions.Any(version => VersionsAreEqual(version, package.CurrentVersion)))
-      {
-        update.AvailableVersions.Add(package.CurrentVersion);
       }
 
       updates.Add(update);
@@ -302,9 +303,6 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
       return [];
     }
   }
-
-  private static bool VersionsAreEqual(string left, string right)
-      => string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
 
   private static bool IsAllowedVersion(string version)
       => !version.Contains("alpha", StringComparison.OrdinalIgnoreCase) &&
