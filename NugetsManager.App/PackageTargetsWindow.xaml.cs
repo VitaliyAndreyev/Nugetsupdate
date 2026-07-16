@@ -1,7 +1,7 @@
-using ProjectManager.App.ViewModels;
+using NugetsManager.App.ViewModels;
 using System.Windows;
 
-namespace ProjectManager.App;
+namespace NugetsManager.App;
 
 public partial class PackageTargetsWindow : Window
 {

@@ -1,4 +1,4 @@
-namespace ProjectManager.App.Models;
+namespace NugetsManager.App.Models;
 
 public sealed record ProcessResult(int ExitCode, string Output, string Error)
 {

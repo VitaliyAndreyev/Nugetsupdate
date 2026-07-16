@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace ProjectManager.App.Infrastructure;
+namespace NugetsManager.App.Infrastructure;
 
 public sealed class AsyncRelayCommand(Func<Task> execute, Func<bool>? canExecute = null) : ICommand
 {

@@ -1,10 +1,10 @@
-using ProjectManager.App.Models;
+using NugetsManager.App.Models;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Xml.Linq;
 
-namespace ProjectManager.App.Services;
+namespace NugetsManager.App.Services;
 
 public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
 {
@@ -30,7 +30,10 @@ public sealed class NuGetUpdateService(PowerShellCommandRunner commandRunner)
           ? ParsePackageReferences(project.Name, netFrameworkResult.Output)
           : [];
 
-      if (netFrameworkPackages.Count > 0)
+      // A successful fallback with no package references is still a successful
+      // project check. Keep the original result only when the fallback itself
+      // failed, so an empty project is not reported as an analysis error.
+      if (netFrameworkResult.Succeeded)
       {
         result = netFrameworkResult;
         packages = netFrameworkPackages;

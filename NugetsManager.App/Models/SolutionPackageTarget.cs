@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace ProjectManager.App.Models;
+namespace NugetsManager.App.Models;
 
 public sealed class SolutionPackageTarget : INotifyPropertyChanged
 {

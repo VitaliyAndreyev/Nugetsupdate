@@ -1,9 +1,9 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.RegularExpressions;
-using ProjectManager.App.Models;
+using NugetsManager.App.Models;
 
-namespace ProjectManager.App.Services;
+namespace NugetsManager.App.Services;
 
 public sealed partial class SolutionAnalyzer
 {

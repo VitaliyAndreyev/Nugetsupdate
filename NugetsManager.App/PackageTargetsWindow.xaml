@@ -1,4 +1,4 @@
-<Window x:Class="ProjectManager.App.PackageTargetsWindow"
+<Window x:Class="NugetsManager.App.PackageTargetsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Solution package targets"

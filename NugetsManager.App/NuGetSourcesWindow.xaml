@@ -1,4 +1,4 @@
-<Window x:Class="ProjectManager.App.NuGetSourcesWindow"
+<Window x:Class="NugetsManager.App.NuGetSourcesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Build and NuGet settings"

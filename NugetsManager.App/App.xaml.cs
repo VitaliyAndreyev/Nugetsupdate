@@ -2,7 +2,7 @@
 using System.Data;
 using System.Windows;
 
-namespace ProjectManager.App;
+namespace NugetsManager.App;
 
 /// <summary>
 /// Interaction logic for App.xaml

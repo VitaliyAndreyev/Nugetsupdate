@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Text;
-using ProjectManager.App.Models;
+using NugetsManager.App.Models;
 
-namespace ProjectManager.App.Services;
+namespace NugetsManager.App.Services;
 
 public sealed class PowerShellCommandRunner
 {

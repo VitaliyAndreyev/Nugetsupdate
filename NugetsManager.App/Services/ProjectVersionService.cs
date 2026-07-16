@@ -1,9 +1,9 @@
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using ProjectManager.App.Models;
+using NugetsManager.App.Models;
 
-namespace ProjectManager.App.Services;
+namespace NugetsManager.App.Services;
 
 public sealed class ProjectVersionService
 {

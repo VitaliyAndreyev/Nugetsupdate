@@ -1,7 +1,7 @@
 using Microsoft.Win32;
-using ProjectManager.App.Infrastructure;
-using ProjectManager.App.Models;
-using ProjectManager.App.Services;
+using NugetsManager.App.Infrastructure;
+using NugetsManager.App.Models;
+using NugetsManager.App.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -9,10 +9,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Windows.Data;
 
-namespace ProjectManager.App.ViewModels;
+namespace NugetsManager.App.ViewModels;
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
+  private const int MaxConcurrentProjects = 2;
   private readonly SolutionAnalyzer _solutionAnalyzer = new();
   private readonly PowerShellCommandRunner _commandRunner = new();
   private readonly NuGetUpdateService _nugetUpdateService;
@@ -312,8 +313,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
       }
       await Task.Yield();
 
-      foreach (var project in Projects)
+      var checkResults = await RunWithConcurrencyAsync(Projects.ToList(), MaxConcurrentProjects, async project =>
       {
+        var projectLog = new StringBuilder();
         project.WorkflowStatus = "Working";
         await Task.Yield();
 
@@ -325,7 +327,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         project.PackageUpdates.Clear();
         try
         {
-          log.AppendLine($"Checking {project.Name}...");
+          projectLog.AppendLine($"Checking {project.Name}...");
           var updates = await _nugetUpdateService.CheckUpdatesAsync(project, sources);
           foreach (var update in updates)
           {
@@ -334,10 +336,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
           }
 
           project.RefreshDisplayName();
-          log.AppendLine($"{project.Name}: {project.PackageUpdates.Count} package(s) found");
+          projectLog.AppendLine($"{project.Name}: {project.PackageUpdates.Count} package(s) found");
           foreach (var update in project.PackageUpdates)
           {
-            log.AppendLine($"  - {update.PackageName}: {update.CurrentVersion} -> {update.LatestVersion}");
+            projectLog.AppendLine($"  - {update.PackageName}: {update.CurrentVersion} -> {update.LatestVersion}");
           }
 
           project.WorkflowStatus = "Completed";
@@ -345,9 +347,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception exception)
         {
           project.WorkflowStatus = "Failed";
-          log.AppendLine($"{project.Name}: check failed");
-          log.AppendLine($"  {exception.Message}");
+          project.RefreshDisplayName();
+          projectLog.AppendLine($"{project.Name}: check failed");
+          projectLog.AppendLine($"  {exception.Message}");
         }
+
+        return projectLog.ToString();
+      });
+
+      foreach (var projectLog in checkResults)
+      {
+        log.Append(projectLog);
       }
 
       RefreshPackageGrid();
@@ -366,7 +376,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
       var sources = ActiveNuGetSources();
       var log = new StringBuilder();
-      var appliedCount = 0;
       var projectsToUpdate = Projects
           .Where(project => project.PackageUpdates.Any(update => update.IsSelected && update.CanApply))
           .ToList();
@@ -377,8 +386,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
       }
       await Task.Yield();
 
-      foreach (var project in projectsToUpdate)
+      var applyResults = await RunWithConcurrencyAsync(projectsToUpdate, MaxConcurrentProjects, async project =>
       {
+        var projectLog = new StringBuilder();
+        var appliedCount = 0;
         project.WorkflowStatus = "Working";
         await Task.Yield();
 
@@ -386,11 +397,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
           foreach (var update in project.PackageUpdates.Where(update => update.IsSelected && update.CanApply))
           {
-            log.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion}");
+            projectLog.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion}");
             var result = await _nugetUpdateService.ApplyUpdateAsync(project, update, sources);
             if (!result.Succeeded)
             {
-              AppendLog("Apply versions failed", $"{project.Name}: {update.PackageName} -> {update.TargetVersion}{Environment.NewLine}{FormatProcessResult(result)}");
+              projectLog.AppendLine($"{project.Name}: {update.PackageName} -> {update.TargetVersion} failed");
+              projectLog.AppendLine(FormatProcessResult(result));
               throw new InvalidOperationException(result.Error.Length > 0 ? result.Error : result.Output);
             }
 
@@ -398,14 +410,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
           }
 
           project.WorkflowStatus = "Completed";
+          return new ProjectApplyResult(project.Name, appliedCount, projectLog.ToString(), null);
         }
-        catch
+        catch (Exception exception)
         {
           project.WorkflowStatus = "Failed";
-          throw;
+          projectLog.AppendLine($"{project.Name}: apply failed");
+          projectLog.AppendLine($"  {exception.Message}");
+          return new ProjectApplyResult(project.Name, appliedCount, projectLog.ToString(), exception.Message);
         }
+      });
+
+      foreach (var result in applyResults)
+      {
+        log.Append(result.Log);
       }
 
+      var appliedCount = applyResults.Sum(result => result.AppliedCount);
       if (appliedCount == 0)
       {
         log.AppendLine("No selected package updates to apply.");
@@ -413,6 +434,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
       log.AppendLine();
       log.AppendLine($"Applied package updates: {appliedCount}");
+      var failedProjects = applyResults.Where(result => result.Error is not null).ToList();
+      if (failedProjects.Count > 0)
+      {
+        log.AppendLine($"Failed projects: {failedProjects.Count}");
+        log.AppendLine(string.Join(Environment.NewLine, failedProjects.Select(result => $"- {result.ProjectName}: {result.Error}")));
+        AppendLog("Apply versions completed with errors", log.ToString().TrimEnd());
+        throw new InvalidOperationException($"Package updates failed for {failedProjects.Count} project(s).");
+      }
+
       AppendLog("Apply versions completed", log.ToString().TrimEnd());
     });
   }
@@ -477,6 +507,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
       AppendLog("Tag created and pushed", $"Tag: {tagName}{Environment.NewLine}{FormatProcessResult(tag)}{Environment.NewLine}{FormatProcessResult(pushTag)}");
     });
+  }
+
+  private static async Task<TResult[]> RunWithConcurrencyAsync<T, TResult>(
+      IReadOnlyList<T> items,
+      int maxConcurrency,
+      Func<T, Task<TResult>> action)
+  {
+    using var semaphore = new SemaphoreSlim(maxConcurrency);
+    var tasks = items.Select(async item =>
+    {
+      await semaphore.WaitAsync();
+      try
+      {
+        return await action(item);
+      }
+      finally
+      {
+        semaphore.Release();
+      }
+    });
+
+    return await Task.WhenAll(tasks);
   }
 
   private async Task RunStageAsync(string stage, Func<Task> action)
@@ -887,6 +939,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     builder.AppendLine($"{title}:");
     builder.AppendLine(value.TrimEnd());
   }
+
+  private sealed record ProjectApplyResult(
+      string ProjectName,
+      int AppliedCount,
+      string Log,
+      string? Error);
 
   private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
   {

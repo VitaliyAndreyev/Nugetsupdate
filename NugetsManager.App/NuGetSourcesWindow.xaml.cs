@@ -1,8 +1,8 @@
 using System.Windows;
 using Microsoft.Win32;
-using ProjectManager.App.ViewModels;
+using NugetsManager.App.ViewModels;
 
-namespace ProjectManager.App;
+namespace NugetsManager.App;
 
 public partial class NuGetSourcesWindow : Window
 {

@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace ProjectManager.App.Services;
+namespace NugetsManager.App.Services;
 
 public sealed class PackageVersionComparer : IComparer<string>
 {
