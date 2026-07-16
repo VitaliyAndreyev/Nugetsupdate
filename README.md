@@ -32,13 +32,13 @@ Project Manager ist eine WPF-Desktopanwendung für Windows, die den typischen Re
 ### Voraussetzungen
 
 - Windows 10/11;
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (das Repository verwendet SDK `8.0.422` und erlaubt den Roll-forward auf ein neueres Feature Band);
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (das Repository verwendet SDK `10.0.302` und erlaubt den Roll-forward auf ein neueres Feature Band);
 - Visual Studio 2022 oder Visual Studio Build Tools mit MSBuild;
 - PowerShell 5.1 (`powershell.exe`);
 - Git im `PATH`;
 - Zugriff auf die verwendeten NuGet-Quellen und das Git-Repository.
 
-Eine Solution darf gleichzeitig .NET-Framework-Projekte, .NET-8-Projekte und Multi-Target-Projekte enthalten. Die Anwendung verarbeitet für jede `.csproj`-Datei die von `dotnet` zurückgegebenen Target Frameworks.
+Eine Solution darf gleichzeitig .NET-Framework-Projekte, .NET-Projekte verschiedener Versionen und Multi-Target-Projekte enthalten. Die Anwendung verarbeitet für jede `.csproj`-Datei die von `dotnet` zurückgegebenen Target Frameworks.
 
 Die Projekte müssen `PackageReference` verwenden und mit `dotnet list package` sowie `dotnet add package` kompatibel sein. Das klassische Paketformat `packages.config` wird nicht unterstützt. In der Regel handelt es sich daher um SDK-Style-Projekte; klassische `.csproj`-Dateien können ebenfalls funktionieren, sofern sie `PackageReference` verwenden und mit der `dotnet` CLI kompatibel sind.
 
@@ -47,12 +47,12 @@ Die Projekte müssen `PackageReference` verwenden und mit `dotnet list package` 
 Im Stammverzeichnis des Repositorys ausführen:
 
 ```powershell
-dotnet restore ProjectManager.sln
-dotnet build ProjectManager.sln -c Release
-dotnet run --project ProjectManager.App\ProjectManager.App.csproj
+dotnet restore NugetsManager.sln
+dotnet build NugetsManager.sln -c Release
+dotnet run --project NugetsManager.App\NugetsManager.App.csproj
 ```
 
-Der Release-Build wird unter `ProjectManager.App\bin\Release\net8.0-windows` erstellt.
+Der Release-Build wird unter `NugetsManager.App\bin\Release\net10.0-windows` erstellt.
 
 ### Verwendung
 
@@ -124,8 +124,8 @@ Als Repository-Verzeichnis gilt der Ordner der ausgewählten `.sln`-Datei. Vor d
 ### Projektstruktur
 
 ```text
-ProjectManager.sln
-└── ProjectManager.App
+NugetsManager.sln
+└── NugetsManager.App
     ├── Models          # Modelle für Projekte, Pakete, Einstellungen und Prozessergebnisse
     ├── Services        # Solution-Analyse, NuGet, Versionen, MSBuild, Git und Einstellungen
     ├── ViewModels      # UI-Zustand und Steuerung des Workflows
@@ -133,7 +133,7 @@ ProjectManager.sln
     └── NuGetSourcesWindow.* # Einstellungen für MSBuild und NuGet-Feeds
 ```
 
-Die Anwendung basiert auf .NET 8, WPF und MVVM und verwendet keine Drittanbieterbibliotheken.
+Die Anwendung basiert auf .NET 10, WPF und MVVM und verwendet keine Drittanbieterbibliotheken.
 
 ### Aktuelle Einschränkungen
 
@@ -148,7 +148,7 @@ Die Anwendung basiert auf .NET 8, WPF und MVVM und verwendet keine Drittanbieter
 
 ### Technologien
 
-- C# / .NET 8
+- C# / .NET 10
 - WPF
 - MVVM
 - `dotnet` CLI
@@ -183,13 +183,13 @@ Project Manager is a Windows desktop WPF application that brings the typical rel
 ### Requirements
 
 - Windows 10/11;
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (the repository pins SDK `8.0.422` and allows rolling forward to a newer feature band);
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (the repository pins SDK `10.0.302` and allows rolling forward to a newer feature band);
 - Visual Studio 2022 or Visual Studio Build Tools with MSBuild;
 - PowerShell 5.1 (`powershell.exe`);
 - Git available through `PATH`;
 - access to the required NuGet sources and Git repository.
 
-A single solution may contain .NET Framework projects, .NET 8 projects, and projects targeting multiple frameworks. For every `.csproj`, the application uses the frameworks returned by `dotnet`.
+A single solution may contain .NET Framework projects, .NET projects targeting different versions, and projects targeting multiple frameworks. For every `.csproj`, the application uses the frameworks returned by `dotnet`.
 
 Projects must use `PackageReference` and be readable by `dotnet list package` and `dotnet add package`. The legacy `packages.config` package-management format is not supported. This normally means SDK-style projects, although traditional `.csproj` files may also work when they use `PackageReference` and are compatible with the `dotnet` CLI.
 
@@ -198,12 +198,12 @@ Projects must use `PackageReference` and be readable by `dotnet list package` an
 Run the following commands from the repository root:
 
 ```powershell
-dotnet restore ProjectManager.sln
-dotnet build ProjectManager.sln -c Release
-dotnet run --project ProjectManager.App\ProjectManager.App.csproj
+dotnet restore NugetsManager.sln
+dotnet build NugetsManager.sln -c Release
+dotnet run --project NugetsManager.App\NugetsManager.App.csproj
 ```
 
-The Release build is written to `ProjectManager.App\bin\Release\net8.0-windows`.
+The Release build is written to `NugetsManager.App\bin\Release\net10.0-windows`.
 
 ### Usage
 
@@ -275,8 +275,8 @@ The directory containing the selected `.sln` is treated as the repository direct
 ### Project structure
 
 ```text
-ProjectManager.sln
-└── ProjectManager.App
+NugetsManager.sln
+└── NugetsManager.App
     ├── Models          # projects, packages, settings, and process result models
     ├── Services        # solution analysis, NuGet, versions, MSBuild, Git, and settings
     ├── ViewModels      # UI state and workflow orchestration
@@ -284,7 +284,7 @@ ProjectManager.sln
     └── NuGetSourcesWindow.* # MSBuild and NuGet feed settings
 ```
 
-The application is built with .NET 8, WPF, and the MVVM pattern without third-party libraries.
+The application is built with .NET 10, WPF, and the MVVM pattern without third-party libraries.
 
 ### Current limitations
 
@@ -299,7 +299,7 @@ The application is built with .NET 8, WPF, and the MVVM pattern without third-pa
 
 ### Technology stack
 
-- C# / .NET 8
+- C# / .NET 10
 - WPF
 - MVVM
 - `dotnet` CLI
